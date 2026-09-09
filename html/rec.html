@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>レコメンデーション・ビジュアライザ — 協調フィルタリング（ユーザー/アイテム）</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --compare:#ffd24a; --neighbor:#4ade80; --target:#ff6b6b; --predict:#c084fc;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input[type=number] { font-family:inherit; }
+  select, input[type=number] { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
+  input[type=number] { width:64px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .info table { width:100%; border-collapse:collapse; font-size:13px; }
+  .info td { padding:5px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .info td:first-child { color:var(--muted); white-space:nowrap; }
+  .ops { font-size:13px; color:var(--text); line-height:1.6; }
+  .ops b { color:var(--accent); }
+
+  /* 類似度バー */
+  .simttl { font-size:12px; color:var(--muted); margin-bottom:8px; }
+  .simrow { display:grid; grid-template-columns:78px 1fr 40px; gap:8px; align-items:center;
+    font-size:12px; padding:2px 0; }
+  .simrow .nm { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .simrow .bar { background:var(--panel2); border-radius:999px; height:9px; overflow:hidden; position:relative; }
+  .simrow .bar i { display:block; height:100%; background:#41506e; border-radius:999px; }
+  .simrow .val { text-align:right; font-variant-numeric:tabular-nums; color:var(--text); }
+  .simrow.s2 .nm { color:var(--compare); } .simrow.s2 .bar i { background:var(--compare); }
+  .simrow.s3 .nm { color:var(--neighbor); font-weight:600; } .simrow.s3 .bar i { background:var(--neighbor); }
+  .simrow .bar i.neg { background:#7a4d6a; }
+
+  /* 推薦リスト */
+  ol.reco { margin:0; padding-left:0; list-style:none; counter-reset:r; }
+  ol.reco li { counter-increment:r; display:grid; grid-template-columns:22px 1fr 44px;
+    gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  ol.reco li::before { content:counter(r); font-weight:700; color:var(--predict);
+    text-align:center; font-variant-numeric:tabular-nums; }
+  ol.reco li.top::before { color:#06122a; background:var(--predict); border-radius:50%; }
+  ol.reco li .rbar { background:var(--panel2); border-radius:999px; height:8px; overflow:hidden; grid-column:2; }
+  ol.reco li .nm2 { grid-column:2; grid-row:1; }
+  ol.reco li .rv { text-align:right; font-variant-numeric:tabular-nums; color:var(--predict); font-weight:600; }
+  .reco-empty { color:var(--muted); font-size:13px; }
+
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:4px; display:inline-block; flex:none; border:1px solid #0008; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 レコメンデーション・ビジュアライザ</h1>
+  <span class="sub">評価行列を使って「似ているもの」から未評価アイテムのスコアを予測する — 協調フィルタリング</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>アルゴリズム</label>
+      <select id="algo">
+        <option value="user" selected>ユーザーベース（似た人で薦める）</option>
+        <option value="item">アイテムベース（似た作品で薦める）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>類似度</label>
+      <select id="metric">
+        <option value="cosine" selected>コサイン類似度</option>
+        <option value="pearson">ピアソン相関</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>対象ユーザー</label>
+      <select id="target"></select>
+    </div>
+    <div class="field"><label>近傍数 k</label><input type="number" id="k" min="1" max="4" value="2"></div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="34" style="width:130px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="600" height="360"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">評価行列（行＝ユーザー・列＝作品）。▶ または「次へ」で1ステップずつ進めます。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1ステップ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1ステップ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📊 計算の進み具合</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="sTarget">—</div><div class="lab">対象ユーザー</div></div>
+          <div class="stat"><div class="num" id="sSim">0</div><div class="lab">計算した類似度</div></div>
+          <div class="stat"><div class="num" id="sNeigh">0</div><div class="lab">近傍 k</div></div>
+          <div class="stat"><div class="num" id="sPred">0</div><div class="lab">予測したアイテム</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📐 類似度</h3>
+        <div class="simttl" id="simTitle">—</div>
+        <div id="simList"></div>
+      </div>
+
+      <div class="card">
+        <h3>⭐ おすすめ（予測スコア順）</h3>
+        <ol class="reco" id="reco"><li class="reco-empty" style="border:none">まだ予測していません</li></ol>
+      </div>
+
+      <div class="card info">
+        <h3>⏱ アルゴリズムの性質</h3>
+        <table>
+          <tr><td>比べるもの</td><td id="iBasis">—</td></tr>
+          <tr><td>考え方</td><td id="iIdea">—</td></tr>
+          <tr><td>類似度</td><td id="iMetric">—</td></tr>
+          <tr><td>特徴</td><td id="iNote">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:var(--target)"></i>対象ユーザー</span>
+          <span><i style="background:var(--compare)"></i>比較中</span>
+          <span><i style="background:var(--neighbor)"></i>近傍（採用）</span>
+          <span><i style="background:var(--predict)"></i>予測する作品</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1ステップ移動 ・ <kbd>Space</kbd> 再生切替 ／
+    セルの数字は評価（1〜5）。空欄＝未評価。<span style="color:var(--predict)">≈</span> は予測値。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// ====================================================================
+// 固定データ（再現性のため）：6 ユーザー × 8 作品の評価行列（0 = 未評価）
+// ====================================================================
+const users = ["あなた","ミオ","アオイ","ハル","ナナ","リン"];
+const items = [
+  {name:"いちごパフェ",  genre:"スイーツ"},
+  {name:"抹茶ラテ",      genre:"スイーツ"},
+  {name:"K-POPライブ",   genre:"韓国カルチャー"},
+  {name:"韓国ドラマ",    genre:"韓国カルチャー"},
+  {name:"ネイルサロン",  genre:"ビューティー"},
+  {name:"韓国コスメ",    genre:"ビューティー"},
+  {name:"ヨガ",          genre:"アクティブ"},
+  {name:"海外旅行",      genre:"アクティブ"},
+];
+//        ﾊﾟﾌｪ ﾗﾃ Kpop 韓ﾄﾞﾗ ﾈｲﾙ ｺｽﾒ ﾖｶﾞ 旅行
+const R = [
+  [5, 4, 0, 0, 5, 4, 2, 0],   // あなた（スイーツ・ビューティー好き／未評価あり）
+  [5, 5, 4, 5, 4, 5, 1, 2],   // ミオ  （あなたに近い・韓国好き）
+  [4, 5, 5, 4, 5, 5, 2, 3],   // アオイ（あなたに近い・韓国好き）
+  [2, 2, 1, 2, 1, 2, 5, 5],   // ハル  （アクティブ派・好みが逆）
+  [1, 2, 2, 1, 2, 1, 4, 5],   // ナナ  （アクティブ派・好みが逆）
+  [4, 4, 3, 3, 4, 3, 4, 4],   // リン  （広く高評価）
+];
+const U = users.length, I = items.length;
+
+// 行/列ハイライトのコード
+const NORMAL=0, TARGET=1, COMPARING=2, NEIGHBOR=3, PREDICT=4;
+
+const INFO = {
+  user:{ basis:"行（ユーザー同士）", idea:"「あなたに似た人」が好きな作品を薦める",
+         note:"直感的。評価が少ない人・新規ユーザーには弱い（コールドスタート）。" },
+  item:{ basis:"列（アイテム同士）", idea:"「この作品を気に入った人は、こちらも」",
+         note:"アイテムは安定なので実用的（Amazon 等）。嗜好の変化に強い。" },
+};
+const METRIC_NOTE = {
+  cosine:"コサイン：ベクトルの向きの近さ（評価の大きさは無視）",
+  pearson:"ピアソン：平均を引いて相関を見る（辛口/甘口を補正）",
+};
+
+let frames=[], cur=0, timer=null, playing=false;
+// 録画中の表示状態（snap で複製して frames に積む）
+let rowState, colState, contrib, simTitle, simList, predictions, recommend, predItem, stats;
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+
+// ====================================================================
+// 類似度
+// ====================================================================
+function coRatedUsers(u,v){ const c=[]; for(let i=0;i<I;i++) if(R[u][i]>0&&R[v][i]>0) c.push(i); return c; }
+function coRatedItems(i,j){ const c=[]; for(let u=0;u<U;u++) if(R[u][i]>0&&R[u][j]>0) c.push(u); return c; }
+
+function cosineUsers(u,v){
+  const co=coRatedUsers(u,v); if(!co.length) return 0;
+  let dot=0,nu=0,nv=0;
+  for(const i of co){ dot+=R[u][i]*R[v][i]; nu+=R[u][i]**2; nv+=R[v][i]**2; }
+  return (nu&&nv)? dot/(Math.sqrt(nu)*Math.sqrt(nv)) : 0;
+}
+function pearsonUsers(u,v){
+  const co=coRatedUsers(u,v); if(co.length<2) return 0;
+  let mu=0,mv=0; for(const i of co){ mu+=R[u][i]; mv+=R[v][i]; } mu/=co.length; mv/=co.length;
+  let num=0,du=0,dv=0;
+  for(const i of co){ const a=R[u][i]-mu, b=R[v][i]-mv; num+=a*b; du+=a*a; dv+=b*b; }
+  return (du&&dv)? num/(Math.sqrt(du)*Math.sqrt(dv)) : 0;
+}
+function cosineItems(i,j){
+  const co=coRatedItems(i,j); if(!co.length) return 0;
+  let dot=0,ni=0,nj=0;
+  for(const u of co){ dot+=R[u][i]*R[u][j]; ni+=R[u][i]**2; nj+=R[u][j]**2; }
+  return (ni&&nj)? dot/(Math.sqrt(ni)*Math.sqrt(nj)) : 0;
+}
+function pearsonItems(i,j){
+  const co=coRatedItems(i,j); if(co.length<2) return 0;
+  let mi=0,mj=0; for(const u of co){ mi+=R[u][i]; mj+=R[u][j]; } mi/=co.length; mj/=co.length;
+  let num=0,di=0,dj=0;
+  for(const u of co){ const a=R[u][i]-mi, b=R[u][j]-mj; num+=a*b; di+=a*a; dj+=b*b; }
+  return (di&&dj)? num/(Math.sqrt(di)*Math.sqrt(dj)) : 0;
+}
+function meanUser(u){ let s=0,n=0; for(let i=0;i<I;i++) if(R[u][i]>0){s+=R[u][i];n++;} return n? s/n : 3; }
+function meanItem(i){ let s=0,n=0; for(let u=0;u<U;u++) if(R[u][i]>0){s+=R[u][i];n++;} return n? s/n : 3; }
+
+// ====================================================================
+// スナップショット
+// ====================================================================
+function resetState(tU){
+  rowState=new Int8Array(U); colState=new Int8Array(I);
+  contrib=[]; simTitle="—"; simList=[]; predictions=[]; recommend=null; predItem=-1;
+  stats={ target:tU, sims:0, neighbors:0, preds:0 };
+}
+function snap(desc, op){
+  frames.push({
+    rowState: rowState.slice(),
+    colState: colState.slice(),
+    contrib: contrib.map(c=>({u:c.u,i:c.i})),
+    simTitle,
+    simList: simList.map(s=>({...s})),
+    predictions: predictions.map(p=>({...p})),
+    recommend: recommend? recommend.map(p=>({...p})) : null,
+    predItem, desc, op,
+    stats: {...stats},
+  });
+}
+
+// ====================================================================
+// ユーザーベース協調フィルタリング
+// ====================================================================
+function buildUserBased(metric, k, tU){
+  resetState(tU);
+  const simFn = metric==="cosine"? cosineUsers : pearsonUsers;
+  rowState[tU]=TARGET;
+  simTitle=`ユーザー類似度（対 ${users[tU]}）`;
+  snap(`対象ユーザー「${users[tU]}」を選択。好みの似た人を探します。`, "対象");
+
+  const others=[]; for(let v=0;v<U;v++) if(v!==tU) others.push(v);
+  simList = others.map(v=>({label:users[v], value:null, state:0}));
+  const sims=[];
+  for(let idx=0; idx<others.length; idx++){
+    const v=others[idx];
+    rowState[v]=COMPARING; simList[idx].state=2;
+    const s=simFn(tU,v);
+    simList[idx].value=s; stats.sims++;
+    snap(`${users[v]} との類似度を計算 → ${s.toFixed(2)}`, "類似度");
+    rowState[v]=NORMAL; simList[idx].state=0;
+    sims.push({v,s,idx});
+  }
+
+  sims.sort((a,b)=>b.s-a.s);
+  const neigh=sims.slice(0,k);
+  for(const n of neigh){ rowState[n.v]=NEIGHBOR; simList[n.idx].state=3; }
+  stats.neighbors=neigh.length;
+  snap(`類似度の高い上位 ${k} 人を「近傍」に採用：${neigh.map(n=>users[n.v]).join("、")}`, "近傍");
+
+  const unrated=[]; for(let i=0;i<I;i++) if(R[tU][i]===0) unrated.push(i);
+  const mu=meanUser(tU);
+  for(const i of unrated){
+    colState[i]=PREDICT; predItem=i; contrib=[];
+    const cs=neigh.filter(n=>R[n.v][i]>0);
+    for(const n of cs) contrib.push({u:n.v, i});
+    snap(`未評価の「${items[i].name}」を予測。近傍がこの作品にどう評価したか見る。`, "予測準備");
+
+    let num=0, den=0;
+    for(const n of cs){
+      if(metric==="cosine") num += n.s*R[n.v][i];
+      else num += n.s*(R[n.v][i]-meanUser(n.v));
+      den += Math.abs(n.s);
+    }
+    let val = (metric==="cosine") ? (den>0? num/den : mu) : (mu + (den>0? num/den : 0));
+    val = clamp(val, 1, 5);
+    predictions.push({idx:i, label:items[i].name, value:val});
+    snap(`「${items[i].name}」の予測スコア ≈ ${val.toFixed(2)}（近傍 ${cs.length} 人の加重平均）`, "予測");
+    colState[i]=NORMAL; predItem=-1; contrib=[];
+  }
+  recommend = predictions.slice().sort((a,b)=>b.value-a.value);
+  stats.preds=predictions.length;
+  snap(`予測スコア順に並べて推薦リスト完成！ 第1位は「${recommend[0].label}」`, "推薦");
+}
+
+// ====================================================================
+// アイテムベース協調フィルタリング
+// ====================================================================
+function buildItemBased(metric, k, tU){
+  resetState(tU);
+  const simFn = metric==="cosine"? cosineItems : pearsonItems;
+  rowState[tU]=TARGET;
+  snap(`対象ユーザー「${users[tU]}」の評価をもとに、似た作品から未評価を予測します。`, "対象");
+
+  const rated=[]; for(let j=0;j<I;j++) if(R[tU][j]>0) rated.push(j);
+  const unrated=[]; for(let i=0;i<I;i++) if(R[tU][i]===0) unrated.push(i);
+
+  for(const i of unrated){
+    predItem=i; colState[i]=PREDICT;
+    simTitle=`アイテム類似度（対「${items[i].name}」）`;
+    simList = rated.map(j=>({label:items[j].name, value:null, state:0}));
+    snap(`未評価の「${items[i].name}」と、評価済み作品との類似度を測る。`, "対象アイテム");
+
+    const sims=[];
+    for(let idx=0; idx<rated.length; idx++){
+      const j=rated[idx];
+      colState[j]=COMPARING; simList[idx].state=2;
+      const s=simFn(i,j);
+      simList[idx].value=s; stats.sims++;
+      snap(`「${items[i].name}」と「${items[j].name}」の類似度 → ${s.toFixed(2)}`, "類似度");
+      colState[j]=NORMAL; simList[idx].state=0;
+      sims.push({j,s,idx});
+    }
+
+    sims.sort((a,b)=>b.s-a.s);
+    const neigh=sims.slice(0,k);
+    contrib=[];
+    for(const n of neigh){ colState[n.j]=NEIGHBOR; simList[n.idx].state=3; contrib.push({u:tU, i:n.j}); }
+    stats.neighbors=k;
+    snap(`似ている上位 ${k} 作品：${neigh.map(n=>items[n.j].name).join("、")} を採用。`, "近傍");
+
+    let num=0, den=0;
+    for(const n of neigh){
+      if(metric==="cosine") num += n.s*R[tU][n.j];
+      else num += n.s*(R[tU][n.j]-meanItem(n.j));
+      den += Math.abs(n.s);
+    }
+    const mi=meanItem(i);
+    let val = (metric==="cosine") ? (den>0? num/den : mi) : (mi + (den>0? num/den : 0));
+    val = clamp(val, 1, 5);
+    predictions.push({idx:i, label:items[i].name, value:val});
+    snap(`あなたの評価を重みづけ → 「${items[i].name}」の予測スコア ≈ ${val.toFixed(2)}`, "予測");
+
+    for(const n of neigh) colState[n.j]=NORMAL;
+    colState[i]=NORMAL; predItem=-1; contrib=[];
+  }
+  recommend = predictions.slice().sort((a,b)=>b.value-a.value);
+  stats.preds=predictions.length;
+  snap(`予測スコア順に並べて推薦リスト完成！ 第1位は「${recommend[0].label}」`, "推薦");
+}
+
+// ====================================================================
+// レイアウト＆描画（評価行列ヒートマップ）
+// ====================================================================
+let labelW=72, headerH=72, cw=60, ch=46;
+function layout(){
+  cw=60; ch=46; labelW=72; headerH=72;
+  cv.width  = labelW + I*cw + 12;
+  cv.height = headerH + U*ch + 8;
+}
+const cellX = i => labelW + i*cw;
+const cellY = u => headerH + u*ch;
+
+const TINT = { [TARGET]:"rgba(255,107,107,.15)", [COMPARING]:"rgba(255,210,74,.17)",
+               [NEIGHBOR]:"rgba(74,222,128,.14)", [PREDICT]:"rgba(192,132,252,.16)" };
+const EDGE = { [TARGET]:"#ff6b6b", [COMPARING]:"#ffd24a", [NEIGHBOR]:"#4ade80", [PREDICT]:"#c084fc" };
+
+function ratingFill(r){ return `rgba(93,169,255,${0.12 + 0.15*r})`; } // 高評価ほど濃い青
+
+function renderFrame(n){
+  const f=frames[n]; if(!f) return;
+  ctx.clearRect(0,0,cv.width,cv.height);
+
+  // 行ハイライト
+  for(let u=0;u<U;u++){ const s=f.rowState[u]; if(!s) continue;
+    ctx.fillStyle=TINT[s]; ctx.fillRect(labelW, cellY(u), I*cw, ch);
+  }
+  // 列ハイライト
+  for(let i=0;i<I;i++){ const s=f.colState[i]; if(!s) continue;
+    ctx.fillStyle=TINT[s]; ctx.fillRect(cellX(i), headerH, cw, U*ch);
+  }
+
+  // セル
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  const predMap=new Map(); for(const p of f.predictions) predMap.set(p.idx, p.value);
+  for(let u=0;u<U;u++){
+    for(let i=0;i<I;i++){
+      const x=cellX(i), y=cellY(u), r=R[u][i];
+      ctx.fillStyle="#ffffff"; ctx.fillRect(x+1,y+1,cw-2,ch-2);
+      if(r>0){
+        ctx.fillStyle=ratingFill(r); ctx.fillRect(x+3,y+3,cw-6,ch-6);
+        ctx.fillStyle="#1a2030"; ctx.font="bold 16px sans-serif";
+        ctx.fillText(r, x+cw/2, y+ch/2);
+      } else if(u===f.stats.target && predMap.has(i)){
+        // 予測値（対象ユーザーの未評価セル）
+        ctx.strokeStyle="rgba(192,132,252,.5)"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+        ctx.strokeRect(x+3,y+3,cw-6,ch-6); ctx.setLineDash([]);
+        ctx.fillStyle="#c084fc"; ctx.font="bold 13px sans-serif";
+        ctx.fillText("≈"+predMap.get(i).toFixed(1), x+cw/2, y+ch/2);
+      } else {
+        ctx.fillStyle="#46506a"; ctx.font="14px sans-serif";
+        ctx.fillText("·", x+cw/2, y+ch/2);
+      }
+    }
+  }
+
+  // 寄与セルのリング
+  for(const c of f.contrib){
+    const x=cellX(c.i), y=cellY(c.u);
+    ctx.strokeStyle="#4ade80"; ctx.lineWidth=2.5;
+    ctx.strokeRect(x+2.5, y+2.5, cw-5, ch-5);
+  }
+
+  // セル境界の強調枠（行/列）
+  for(let u=0;u<U;u++){ const s=f.rowState[u]; if(s){ ctx.strokeStyle=EDGE[s]; ctx.lineWidth=2;
+    ctx.strokeRect(labelW+1, cellY(u)+1, I*cw-2, ch-2); } }
+  for(let i=0;i<I;i++){ const s=f.colState[i]; if(s){ ctx.strokeStyle=EDGE[s]; ctx.lineWidth=2;
+    ctx.strokeRect(cellX(i)+1, headerH+1, cw-2, U*ch-2); } }
+
+  // ユーザー名（左）
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for(let u=0;u<U;u++){
+    const s=f.rowState[u];
+    ctx.fillStyle = s? EDGE[s] : "#8a97b0";
+    ctx.font = (s? "bold ":"")+"13px sans-serif";
+    ctx.fillText(users[u], labelW-8, cellY(u)+ch/2);
+  }
+  // 作品名（上・斜め）
+  for(let i=0;i<I;i++){
+    const s=f.colState[i];
+    ctx.save();
+    ctx.translate(cellX(i)+cw*0.62, headerH-8);
+    ctx.rotate(-Math.PI*0.20);
+    ctx.textAlign="left"; ctx.textBaseline="middle";
+    ctx.fillStyle = s? EDGE[s] : "#8a97b0";
+    ctx.font = (s? "bold ":"")+"12px sans-serif";
+    ctx.fillText(items[i].name, 0, 0);
+    ctx.restore();
+  }
+
+  // サイドバー
+  $("sTarget").textContent = users[f.stats.target];
+  $("sSim").textContent = f.stats.sims;
+  $("sNeigh").textContent = f.stats.neighbors;
+  $("sPred").textContent = f.stats.preds;
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op || "—";
+  $("simTitle").textContent = f.simTitle;
+  renderSim(f.simList);
+  renderReco(f.recommend);
+
+  $("progress").value = n;
+  $("stepLabel").textContent = `${n} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = n<=0;
+  $("next").disabled = $("toEnd").disabled = n>=frames.length-1;
+}
+
+function renderSim(list){
+  if(!list.length){ $("simList").innerHTML='<div class="reco-empty">—</div>'; return; }
+  $("simList").innerHTML = list.map(s=>{
+    const v=s.value;
+    const w = v==null? 0 : Math.round(Math.min(Math.abs(v),1)*100);
+    const neg = v!=null && v<0 ? " neg":"";
+    const vt = v==null? "…" : v.toFixed(2);
+    return `<div class="simrow s${s.state}"><span class="nm">${s.label}</span>`
+         + `<span class="bar"><i class="${neg}" style="width:${w}%"></i></span>`
+         + `<span class="val">${vt}</span></div>`;
+  }).join("");
+}
+function renderReco(list){
+  if(!list || !list.length){ $("reco").innerHTML='<li class="reco-empty" style="border:none">まだ予測していません</li>'; return; }
+  const max=Math.max(...list.map(p=>p.value), 5);
+  $("reco").innerHTML = list.map((p,idx)=>{
+    const w=Math.round(p.value/5*100);
+    return `<li class="${idx===0?"top":""}"><span class="nm2">${p.label}</span>`
+         + `<span class="rbar"><i style="display:block;height:100%;width:${w}%;background:var(--predict);border-radius:999px"></i></span>`
+         + `<span class="rv">${p.value.toFixed(2)}</span></li>`;
+  }).join("");
+}
+
+function showInfo(){
+  const a=$("algo").value, m=$("metric").value, x=INFO[a];
+  $("iBasis").textContent=x.basis;
+  $("iIdea").textContent=x.idea;
+  $("iMetric").textContent=METRIC_NOTE[m];
+  $("iNote").textContent=x.note;
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function rebuild(){
+  stop();
+  layout();
+  frames=[];
+  const algo=$("algo").value, metric=$("metric").value;
+  const tU=parseInt($("target").value,10)||0;
+  let k=parseInt($("k").value,10); if(isNaN(k)) k=2; k=clamp(k,1,4); $("k").value=k;
+  if(algo==="user") buildUserBased(metric, k, tU);
+  else buildItemBased(metric, k, tU);
+  cur=0;
+  $("progress").max=frames.length-1;
+  showInfo();
+  renderFrame(0);
+}
+
+function goTo(i){ cur=clamp(i,0,frames.length-1); renderFrame(cur); if(cur>=frames.length-1) stop(); }
+function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){ if(!playing) return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
+  const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 620-sp*9); }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+// 対象ユーザーの選択肢を生成
+users.forEach((u,i)=>{ const o=document.createElement("option"); o.value=i; o.textContent=u; $("target").appendChild(o); });
+
+$("algo").onchange = rebuild;
+$("metric").onchange = rebuild;
+$("target").onchange = rebuild;
+$("k").onchange = rebuild;
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>

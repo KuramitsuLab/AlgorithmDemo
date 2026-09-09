@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ソートアルゴリズム ビジュアル教材</title>
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --panel2: #eef1f7;
+    --line: #d6dce8;
+    --text: #1a2030;
+    --muted: #5d6b82;
+    --accent: #2f7fd9;
+    --bar: #4a90d9;
+    --compare: #ffd24a;
+    --swap: #ff6b6b;
+    --sorted: #4ade80;
+    --pivot: #c084fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  .controls {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  select, button, input[type=range] { font-family: inherit; }
+  select {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; cursor: pointer;
+  }
+  button {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 14px; font-size: 14px; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  button:hover:not(:disabled) { background: #e4eaf5; border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #1f6bc4; }
+  .spacer { flex: 1; }
+
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  #bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 340px;
+    width: 100%;
+  }
+  .bar {
+    flex: 1;
+    background: var(--bar);
+    border-radius: 3px 3px 0 0;
+    position: relative;
+    transition: height .08s linear, background .08s;
+    min-width: 2px;
+  }
+  .bar.compare { background: var(--compare); }
+  .bar.swap { background: var(--swap); }
+  .bar.sorted { background: var(--sorted); }
+  .bar.pivot { background: var(--pivot); }
+  .bar .val {
+    position: absolute; top: -18px; left: 0; right: 0;
+    text-align: center; font-size: 10px; color: var(--muted);
+  }
+
+  .desc {
+    margin-top: 14px; min-height: 22px;
+    font-size: 14px; color: var(--text);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .desc .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
+  }
+
+  .playbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  #progress { flex: 1; min-width: 200px; accent-color: var(--accent); }
+  .step-label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px;
+  }
+  .card h3 { margin: 0 0 12px; font-size: 14px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .lab { font-size: 11px; color: var(--muted); }
+  .complexity table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .complexity td { padding: 5px 4px; border-bottom: 1px solid var(--line); }
+  .complexity td:first-child { color: var(--muted); }
+  .complexity td:last-child { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .complexity .note { margin: 10px 0 0; padding: 8px 10px; font-size: 12px; line-height: 1.6;
+    color: var(--text); background: #fff7e0; border: 1px solid #ffe2a8; border-radius: 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  kbd {
+    background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 5px; padding: 1px 6px; font-size: 12px; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔢 ソートアルゴリズム ビジュアライザ</h1>
+  <span class="sub">縦棒で手を動かしながら学ぶ — ステップ送り / 逆再生 / 計算量表示</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>アルゴリズム</label>
+      <select id="algo">
+        <option value="bubble">バブルソート</option>
+        <option value="selection">選択ソート</option>
+        <option value="insertion">挿入ソート</option>
+        <option value="shell">シェルソート</option>
+        <option value="quick">クイックソート</option>
+        <option value="merge">マージソート</option>
+        <option value="heap">ヒープソート</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>要素数</label>
+      <select id="size">
+        <option value="10">10 本</option>
+        <option value="20" selected>20 本</option>
+        <option value="30">30 本</option>
+        <option value="40">40 本</option>
+        <option value="50">50 本</option>
+        <option value="60">60 本</option>
+        <option value="70">70 本</option>
+        <option value="80">80 本</option>
+        <option value="90">90 本</option>
+        <option value="100">100 本</option>
+      </select>
+    </div>
+    <button id="shuffle">🎲 ランダム生成</button>
+    <button id="best" title="昇順に整列済み（多くのソートで最良ケース）">⬆ 最良ケース</button>
+    <button id="worst" title="降順に並んだ配列（多くのソートで最悪ケース）">⬇ 最悪ケース</button>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="20" style="width:140px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="stage">
+    <div id="bars"></div>
+    <div class="desc">
+      <span class="badge" id="opbadge">準備完了</span>
+      <span id="descText">「ランダム生成」で配列を作り、▶ または「次へ」で動かしてみましょう。</span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--bar)"></i>未ソート</span>
+      <span><i style="background:var(--compare)"></i>比較中</span>
+      <span><i style="background:var(--swap)"></i>交換/書込</span>
+      <span><i style="background:var(--pivot)"></i>基準(pivot/key)</span>
+      <span><i style="background:var(--sorted)"></i>確定</span>
+    </div>
+  </div>
+
+  <div class="playbar">
+    <button id="toStart" title="最初へ">⏮</button>
+    <button id="prev" title="1ステップ戻る">◀ 戻る</button>
+    <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+    <button id="next" title="1ステップ進む">次へ ▶</button>
+    <button id="toEnd" title="最後へ">⏭</button>
+    <input type="range" id="progress" min="0" max="0" value="0">
+    <span class="step-label" id="stepLabel">0 / 0</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>📊 実行カウント（このアルゴリズムの今の進み具合）</h3>
+      <div class="stats">
+        <div class="stat"><div class="num" id="cmpCount">0</div><div class="lab">比較</div></div>
+        <div class="stat"><div class="num" id="swapCount">0</div><div class="lab">交換 / 書込</div></div>
+        <div class="stat"><div class="num" id="accCount">0</div><div class="lab">配列アクセス</div></div>
+      </div>
+    </div>
+    <div class="card complexity">
+      <h3>⏱ 計算量（理論値）</h3>
+      <table>
+        <tr><td>最良時間計算量</td><td id="cBest">—</td></tr>
+        <tr><td>平均時間計算量</td><td id="cAvg">—</td></tr>
+        <tr><td>最悪時間計算量</td><td id="cWorst">—</td></tr>
+        <tr><td>空間計算量</td><td id="cSpace">—</td></tr>
+        <tr><td>安定ソート</td><td id="cStable">—</td></tr>
+      </table>
+      <p id="cNote" class="note" style="display:none"></p>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> ステップ移動 ・ <kbd>Space</kbd> 再生切替 ・ <kbd>R</kbd> ランダム生成
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// ---- アルゴリズムの解説データ ----
+const INFO = {
+  bubble:    { best:"O(n)",      avg:"O(n²)",       worst:"O(n²)",       space:"O(1)", stable:"○ 安定" },
+  selection: { best:"O(n²)",     avg:"O(n²)",       worst:"O(n²)",       space:"O(1)", stable:"× 不安定" },
+  insertion: { best:"O(n)",      avg:"O(n²)",       worst:"O(n²)",       space:"O(1)", stable:"○ 安定" },
+  shell:     { best:"O(n log n)",avg:"O(n^1.25)",   worst:"O(n²)",       space:"O(1)", stable:"× 不安定" },
+  quick:     { best:"O(n log n)",avg:"O(n log n)",  worst:"O(n²)",       space:"O(log n)", stable:"× 不安定",
+    note:"このクイックソートは末尾要素をピボットにする方式です。整列済み（昇順・降順）データはピボットが常に最大/最小になり、分割が最も偏って O(n²) の最悪ケースになります（降順＝「最悪ケース」ボタン）。「最良ケース」ボタンは、各分割でピボットがちょうど中央に来るようピボット位置から逆算した配列を生成するので、毎回ほぼ均等に分割され O(n log n) になります（見た目は整列していません）。" },
+  merge:     { best:"O(n log n)",avg:"O(n log n)",  worst:"O(n log n)",  space:"O(n)", stable:"○ 安定" },
+  heap:      { best:"O(n log n)",avg:"O(n log n)",  worst:"O(n log n)",  space:"O(1)", stable:"× 不安定" },
+};
+
+// ---- 状態 ----
+let arr = [];
+let frames = [];      // 記録した各ステップのスナップショット
+let cur = 0;          // 現在のフレーム番号
+let timer = null;
+let playing = false;
+
+const $ = id => document.getElementById(id);
+
+// ====================================================================
+// 各ソートを「ジェネレータ」で書く。yield でイベントを返し、
+// それを録画して frames を作る → 前後どちらにも自由に移動できる。
+// イベント: {compare:[i,j]} / {swap:[i,j]} / {overwrite:[i,val]} /
+//           {pivot:i} / {sorted:[...]} / {desc:"..."}
+// 配列 a はジェネレータ内で破壊的に並べ替える。
+// ====================================================================
+
+function* bubbleSort(a) {
+  const n = a.length;
+  const done = [];
+  for (let i = 0; i < n - 1; i++) {
+    let swapped = false;
+    yield { desc: `${i+1} 巡目: 隣り合う要素を端から比較していきます`, op: "巡回" };
+    for (let j = 0; j < n - 1 - i; j++) {
+      yield { compare: [j, j+1], desc: `a[${j}] と a[${j+1}] を比較`, op: "比較" };
+      if (a[j] > a[j+1]) {
+        [a[j], a[j+1]] = [a[j+1], a[j]];
+        yield { swap: [j, j+1], desc: `左が大きいので交換`, op: "交換" };
+        swapped = true;
+      }
+    }
+    done.unshift(n - 1 - i);
+    yield { sorted: [...done], desc: `右端 a[${n-1-i}] が確定`, op: "確定" };
+    if (!swapped) {
+      const all = []; for (let k = 0; k < n; k++) all.push(k);
+      yield { sorted: all, desc: `交換が起きなかったので整列完了！`, op: "完了" };
+      return;
+    }
+  }
+  const all = []; for (let k = 0; k < n; k++) all.push(k);
+  yield { sorted: all, desc: `整列完了！`, op: "完了" };
+}
+
+function* selectionSort(a) {
+  const n = a.length;
+  const done = [];
+  for (let i = 0; i < n - 1; i++) {
+    let min = i;
+    yield { pivot: i, sorted: [...done], desc: `位置 ${i} に入れる最小値を探します`, op: "探索開始" };
+    for (let j = i + 1; j < n; j++) {
+      yield { compare: [min, j], pivot: i, sorted: [...done], desc: `現在の最小 a[${min}] と a[${j}] を比較`, op: "比較" };
+      if (a[j] < a[min]) {
+        min = j;
+        yield { pivot: min, sorted: [...done], desc: `新しい最小は a[${j}]`, op: "最小更新" };
+      }
+    }
+    if (min !== i) {
+      [a[i], a[min]] = [a[min], a[i]];
+      yield { swap: [i, min], sorted: [...done], desc: `最小値を位置 ${i} へ交換`, op: "交換" };
+    }
+    done.push(i);
+    yield { sorted: [...done], desc: `a[${i}] が確定`, op: "確定" };
+  }
+  done.push(n - 1);
+  yield { sorted: [...done], desc: `整列完了！`, op: "完了" };
+}
+
+function* insertionSort(a) {
+  const n = a.length;
+  yield { sorted: [0], desc: `先頭1要素はソート済みとみなします`, op: "開始" };
+  for (let i = 1; i < n; i++) {
+    const key = a[i];
+    yield { pivot: i, desc: `a[${i}] (=${key}) を左の整列済み部分へ挿入します`, op: "取り出し" };
+    let j = i - 1;
+    while (j >= 0 && a[j] > key) {
+      yield { compare: [j, j+1], pivot: i, desc: `a[${j}] (=${a[j]}) は ${key} より大きい → 右へずらす`, op: "比較" };
+      a[j+1] = a[j];
+      yield { overwrite: [j+1, a[j]], desc: `a[${j}] を1つ右へコピー`, op: "ずらし" };
+      j--;
+    }
+    if (j >= 0) yield { compare: [j, i], desc: `a[${j}] (=${a[j]}) は ${key} 以下 → ここで止まる`, op: "比較" };
+    a[j+1] = key;
+    yield { overwrite: [j+1, key], desc: `空いた位置 ${j+1} に ${key} を挿入`, op: "挿入" };
+    const s = []; for (let k = 0; k <= i; k++) s.push(k);
+    yield { sorted: s, desc: `先頭から ${i+1} 個が整列済み`, op: "進行" };
+  }
+}
+
+function* shellSort(a) {
+  const n = a.length;
+  let gap = Math.floor(n / 2);
+  while (gap > 0) {
+    yield { desc: `ギャップ ${gap} で挿入ソートを行います`, op: `gap=${gap}` };
+    for (let i = gap; i < n; i++) {
+      const key = a[i];
+      yield { pivot: i, desc: `a[${i}] (=${key}) を ${gap} 個離れた要素と比較`, op: "取り出し" };
+      let j = i;
+      while (j >= gap && a[j - gap] > key) {
+        yield { compare: [j - gap, j], pivot: i, desc: `a[${j-gap}] > ${key} → ${gap} 個右へ`, op: "比較" };
+        a[j] = a[j - gap];
+        yield { overwrite: [j, a[j - gap]], desc: `${gap} 個右へコピー`, op: "ずらし" };
+        j -= gap;
+      }
+      a[j] = key;
+      yield { overwrite: [j, key], desc: `位置 ${j} に ${key} を挿入`, op: "挿入" };
+    }
+    gap = Math.floor(gap / 2);
+  }
+  const all = []; for (let k = 0; k < n; k++) all.push(k);
+  yield { sorted: all, desc: `整列完了！`, op: "完了" };
+}
+
+function* quickSort(a) {
+  const n = a.length;
+  const done = new Set();
+  yield* qs(0, n - 1);
+  function* qs(lo, hi) {
+    if (lo > hi) return;
+    if (lo === hi) { done.add(lo); yield { sorted: [...done], desc: `a[${lo}] 確定`, op: "確定" }; return; }
+    const pivot = a[hi];
+    yield { pivot: hi, sorted: [...done], desc: `[${lo}..${hi}] を分割。基準(pivot) = a[${hi}] = ${pivot}`, op: "分割開始" };
+    let i = lo;
+    for (let j = lo; j < hi; j++) {
+      yield { compare: [j, hi], pivot: hi, sorted: [...done], desc: `a[${j}] と pivot(${pivot}) を比較`, op: "比較" };
+      if (a[j] < pivot) {
+        if (i !== j) {
+          [a[i], a[j]] = [a[j], a[i]];
+          yield { swap: [i, j], pivot: hi, sorted: [...done], desc: `pivot 未満 → 左側 (位置 ${i}) へ集める`, op: "交換" };
+        } else {
+          yield { swap: [i, j], pivot: hi, sorted: [...done], desc: `pivot 未満。すでに左側`, op: "据置" };
+        }
+        i++;
+      }
+    }
+    [a[i], a[hi]] = [a[hi], a[i]];
+    yield { swap: [i, hi], sorted: [...done], desc: `pivot を境界 (位置 ${i}) に置く`, op: "pivot確定" };
+    done.add(i);
+    yield { sorted: [...done], desc: `a[${i}] = ${a[i]} が確定`, op: "確定" };
+    yield* qs(lo, i - 1);
+    yield* qs(i + 1, hi);
+  }
+  const all = []; for (let k = 0; k < n; k++) all.push(k);
+  yield { sorted: all, desc: `整列完了！`, op: "完了" };
+}
+
+function* mergeSort(a) {
+  const n = a.length;
+  yield* ms(0, n - 1);
+  function* ms(lo, hi) {
+    if (lo >= hi) return;
+    const mid = Math.floor((lo + hi) / 2);
+    yield { desc: `[${lo}..${hi}] を [${lo}..${mid}] と [${mid+1}..${hi}] に分割`, op: "分割" };
+    yield* ms(lo, mid);
+    yield* ms(mid + 1, hi);
+    // merge
+    const left = a.slice(lo, mid + 1);
+    const right = a.slice(mid + 1, hi + 1);
+    yield { desc: `[${lo}..${mid}] と [${mid+1}..${hi}] をマージ`, op: "マージ" };
+    let i = 0, j = 0, k = lo;
+    while (i < left.length && j < right.length) {
+      yield { compare: [lo + i, mid + 1 + j], desc: `左 ${left[i]} と 右 ${right[j]} を比較`, op: "比較" };
+      if (left[i] <= right[j]) {
+        a[k] = left[i];
+        yield { overwrite: [k, left[i]], desc: `小さい方 ${left[i]} を位置 ${k} へ`, op: "書込" };
+        i++;
+      } else {
+        a[k] = right[j];
+        yield { overwrite: [k, right[j]], desc: `小さい方 ${right[j]} を位置 ${k} へ`, op: "書込" };
+        j++;
+      }
+      k++;
+    }
+    while (i < left.length) { a[k] = left[i]; yield { overwrite: [k, left[i]], desc: `左の残り ${left[i]} を書込`, op: "書込" }; i++; k++; }
+    while (j < right.length) { a[k] = right[j]; yield { overwrite: [k, right[j]], desc: `右の残り ${right[j]} を書込`, op: "書込" }; j++; k++; }
+  }
+  const all = []; for (let k = 0; k < n; k++) all.push(k);
+  yield { sorted: all, desc: `整列完了！`, op: "完了" };
+}
+
+function* heapSort(a) {
+  const n = a.length;
+  const done = [];
+  yield { desc: `配列を最大ヒープに構築します`, op: "ヒープ構築" };
+  for (let i = Math.floor(n / 2) - 1; i >= 0; i--) yield* siftDown(i, n);
+  for (let end = n - 1; end > 0; end--) {
+    [a[0], a[end]] = [a[end], a[0]];
+    yield { swap: [0, end], sorted: [...done], desc: `最大値(根)を末尾 ${end} へ移動`, op: "交換" };
+    done.unshift(end);
+    yield { sorted: [...done], desc: `a[${end}] 確定`, op: "確定" };
+    yield* siftDown(0, end);
+  }
+  done.unshift(0);
+  yield { sorted: [...done], desc: `整列完了！`, op: "完了" };
+
+  function* siftDown(root, size) {
+    while (true) {
+      let largest = root;
+      const l = 2 * root + 1, r = 2 * root + 2;
+      if (l < size) { yield { compare: [largest, l], pivot: root, sorted: [...done], desc: `親 a[${largest}] と左子 a[${l}] を比較`, op: "比較" }; if (a[l] > a[largest]) largest = l; }
+      if (r < size) { yield { compare: [largest, r], pivot: root, sorted: [...done], desc: `a[${largest}] と右子 a[${r}] を比較`, op: "比較" }; if (a[r] > a[largest]) largest = r; }
+      if (largest === root) return;
+      [a[root], a[largest]] = [a[largest], a[root]];
+      yield { swap: [root, largest], sorted: [...done], desc: `子の方が大きい → 交換して下ろす`, op: "交換" };
+      root = largest;
+    }
+  }
+}
+
+const ALGOS = {
+  bubble: bubbleSort, selection: selectionSort, insertion: insertionSort,
+  shell: shellSort, quick: quickSort, merge: mergeSort, heap: heapSort,
+};
+
+// ====================================================================
+// 録画: ジェネレータを最後まで回し、各 yield 時点の
+// 配列スナップショット・ハイライト・累積カウントを frames に貯める。
+// ====================================================================
+function record(algoKey, initial) {
+  const a = initial.slice();
+  const gen = ALGOS[algoKey](a);
+  const out = [];
+  let cmp = 0, swp = 0, acc = 0;
+  let sortedSet = [];
+
+  // 初期フレーム
+  out.push({ array: a.slice(), highlight: {}, sorted: [], cmp: 0, swp: 0, acc: 0,
+             desc: "ランダムに生成された配列です。比較・交換を1ステップずつ追えます。", op: "スタート" });
+
+  for (const ev of gen) {
+    if (ev.compare) { cmp++; acc += 2; }
+    if (ev.swap)    { swp++; acc += 4; }
+    if (ev.overwrite) { swp++; acc += 1; }
+    if (ev.sorted)  { sortedSet = ev.sorted; }
+
+    const hl = {};
+    if (ev.compare) hl.compare = ev.compare;
+    if (ev.swap)    hl.swap = ev.swap;
+    if (ev.overwrite) hl.swap = [ev.overwrite[0]];
+    if (ev.pivot !== undefined) hl.pivot = ev.pivot;
+
+    out.push({
+      array: a.slice(),
+      highlight: hl,
+      sorted: sortedSet.slice(),
+      cmp, swp, acc,
+      desc: ev.desc || "",
+      op: ev.op || "",
+    });
+  }
+  return out;
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+const maxVal = () => Math.max(...arr, 1);
+
+function buildBars() {
+  const bars = $("bars");
+  bars.innerHTML = "";
+  const showVal = arr.length <= 20;
+  const mx = maxVal();
+  arr.forEach(v => {
+    const b = document.createElement("div");
+    b.className = "bar";
+    b.style.height = (v / mx * 100) + "%";
+    if (showVal) {
+      const s = document.createElement("span");
+      s.className = "val"; s.textContent = v;
+      b.appendChild(s);
+    }
+    bars.appendChild(b);
+  });
+}
+
+function renderFrame(idx) {
+  const f = frames[idx];
+  if (!f) return;
+  const bars = $("bars").children;
+  const mx = Math.max(...f.array, 1);
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    b.style.height = (f.array[i] / mx * 100) + "%";
+    b.className = "bar";
+    const valEl = b.querySelector(".val");
+    if (valEl) valEl.textContent = f.array[i];
+  }
+  const setCls = (list, cls) => { if (list) list.forEach(i => bars[i] && bars[i].classList.add(cls)); };
+  setCls(f.sorted, "sorted");
+  if (f.highlight.pivot !== undefined && bars[f.highlight.pivot]) bars[f.highlight.pivot].classList.add("pivot");
+  setCls(f.highlight.compare, "compare");
+  setCls(f.highlight.swap, "swap");
+
+  $("cmpCount").textContent = f.cmp;
+  $("swapCount").textContent = f.swp;
+  $("accCount").textContent = f.acc;
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op || "—";
+  $("progress").value = idx;
+  $("stepLabel").textContent = `${idx} / ${frames.length - 1}`;
+
+  $("prev").disabled = idx <= 0;
+  $("toStart").disabled = idx <= 0;
+  $("next").disabled = idx >= frames.length - 1;
+  $("toEnd").disabled = idx >= frames.length - 1;
+}
+
+function showComplexity(key) {
+  const c = INFO[key];
+  $("cBest").textContent = c.best;
+  $("cAvg").textContent = c.avg;
+  $("cWorst").textContent = c.worst;
+  $("cSpace").textContent = c.space;
+  $("cStable").textContent = c.stable;
+  const note = $("cNote");
+  if (c.note) { note.textContent = c.note; note.style.display = ""; }
+  else { note.textContent = ""; note.style.display = "none"; }
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+// クイックソート(末尾ピボット/Lomuto)の最良ケース配列を「ピボット位置から逆算」して作る。
+// 各範囲[lo..hi]のピボット(=末尾)を中央ランク m=(lo+hi)/2 にすると分割が毎回均等になる。
+// Lomuto分割は「pivot未満」を元の相対順のまま前方へ詰め、「pivot超」には先頭→末尾の
+// 左回転を施す。よって分割後に望む左右部分列へ割れるよう、各範囲を
+//   [左部分列] + [右部分列を右に1つ回転] + [ピボット]
+// の順で構成すればよい（rankで構成し、最後に高さ値へ写像）。
+function quickBestRanks(n) {
+  function construct(lo, hi) {
+    if (lo > hi) return [];
+    if (lo === hi) return [lo];
+    const m = (lo + hi) >> 1;            // ピボット＝中央ランク（最終位置も m）
+    const left = construct(lo, m - 1);   // 分割後そのまま左部分へ
+    const right = construct(m + 1, hi);  // 分割後の右部分にしたい列
+    // 「pivot超」要素は分割で左回転される → 逆算は右回転（末尾を先頭へ）
+    const gpre = right.length ? [right[right.length - 1], ...right.slice(0, -1)] : [];
+    return [...left, ...gpre, m];
+  }
+  return construct(0, n - 1);
+}
+
+// mode: "random"（既定）/ "best"（最良ケース）/ "worst"（降順）
+function regenerate(mode) {
+  stop();
+  const n = parseInt($("size").value, 10);
+  arr = [];
+  // 等間隔の値（n=10 なら 10,20,…,100）。重複なしで高さがきれいに分かれる。
+  for (let i = 1; i <= n; i++) arr.push(Math.round(i / n * 100));
+  if (mode === "best") {
+    if ($("algo").value === "quick") {
+      // クイックソートだけは昇順だと最悪。ピボット位置から逆算した均等分割配列にする。
+      const vals = arr.slice();                  // 昇順の高さ値（rank順）
+      arr = quickBestRanks(n).map(r => vals[r]);
+    }
+    // それ以外は昇順のまま（多くのソートで最良ケース）。
+  } else if (mode === "worst") {
+    arr.reverse(); // 降順（多くのソートで最悪ケース）。
+  } else {
+    // ランダム：Fisher–Yates でシャッフル。
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+  prepare();
+  buildBars();
+}
+
+function prepare() {
+  const key = $("algo").value;
+  frames = record(key, arr);
+  cur = 0;
+  $("progress").max = frames.length - 1;
+  showComplexity(key);
+  renderFrame(0);
+}
+
+function goTo(i) {
+  cur = Math.max(0, Math.min(frames.length - 1, i));
+  renderFrame(cur);
+  if (cur >= frames.length - 1) stop();
+}
+
+function play() {
+  if (playing) { stop(); return; }
+  if (cur >= frames.length - 1) cur = 0;
+  playing = true;
+  $("play").textContent = "⏸ 一時停止";
+  tick();
+}
+function tick() {
+  if (!playing) return;
+  if (cur >= frames.length - 1) { stop(); return; }
+  goTo(cur + 1);
+  const speed = parseInt($("speed").value, 10);
+  const delay = 520 - speed * 8; // 1→512ms, 60→40ms
+  timer = setTimeout(tick, delay);
+}
+function stop() {
+  playing = false;
+  clearTimeout(timer);
+  $("play").textContent = "▶ 再生";
+}
+
+// ---- イベント ----
+$("shuffle").onclick = () => regenerate("random");
+$("best").onclick = () => regenerate("best");
+$("worst").onclick = () => regenerate("worst");
+$("algo").onchange = () => { stop(); prepare(); buildBars(); renderFrame(0); };
+$("size").onchange = () => regenerate("random");
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur + 1); };
+$("prev").onclick = () => { stop(); goTo(cur - 1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length - 1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value, 10)); };
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowRight") { stop(); goTo(cur + 1); e.preventDefault(); }
+  else if (e.key === "ArrowLeft") { stop(); goTo(cur - 1); e.preventDefault(); }
+  else if (e.key === " ") { play(); e.preventDefault(); }
+  else if (e.key === "r" || e.key === "R") { regenerate("random"); }
+});
+
+// 初期化
+regenerate("random");
+</script>
+</body>
+</html>

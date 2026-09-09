@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MNIST ミニ — 低解像度・少数クラスで手書き数字認識</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --pos:#ff6b6b; --neg:#2f5d8a; --fire:#4ade80; --goal:#c084fc; --grad:#ffd24a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  input[type=range] { accent-color:var(--accent); }
+  .rateval { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  button.mini { padding:6px 10px; font-size:12.5px; }
+  .spacer { flex:1; }
+  .layout { display:grid; grid-template-columns:1fr 320px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .canvas-row { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; width:100%; align-items:flex-start; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; }
+  #inpad { cursor:crosshair; background:#ffffff; border:1px solid var(--line); touch-action:none; }
+  .padcol { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .padbtns { display:flex; gap:8px; }
+  .cap { font-size:11.5px; color:var(--muted); margin-top:4px; text-align:center; max-width:210px; }
+  .desc { margin-top:2px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .formula { font-family:Consolas,monospace; font-size:13px; background:var(--panel2);
+    border-radius:8px; padding:10px 12px; color:var(--text); text-align:center; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:3px; display:inline-block; flex:none; }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  .status { font-weight:700; }
+  .arch { font-family:Consolas,monospace; font-size:12px; color:var(--accent);
+    text-align:center; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔢 MNIST ミニ — 手書き数字認識</h1>
+  <span class="sub">解像度をしぼり（8×8〜）、数を限定して、小さなネットが「手書き数字」を学ぶ様子を見る</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>使う数字（クラス）</label>
+      <select id="classes">
+        <option value="01">0 と 1（2クラス・やさしい）</option>
+        <option value="04" selected>0〜4（5クラス）</option>
+        <option value="09">0〜9（10クラス・むずかしい）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>解像度（入力ピクセル）</label>
+      <select id="res">
+        <option value="8" selected>8 × 8 ＝ 64</option>
+        <option value="10">10 × 10 ＝ 100</option>
+        <option value="14">14 × 14 ＝ 196</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>1数字あたりの枚数</label>
+      <select id="per">
+        <option value="10">10 枚</option>
+        <option value="20" selected>20 枚</option>
+        <option value="40">40 枚</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>隠れ層</label>
+      <select id="hidden">
+        <option value="0" selected>なし（テンプレート学習）</option>
+        <option value="16">16 個（特徴を学習）</option>
+        <option value="32">32 個</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>学習率 η = <span class="rateval" id="rateVal">0.50</span></label>
+      <input type="range" id="rate" min="5" max="150" value="50" style="width:140px">
+    </div>
+    <div class="field">
+      <label>エポック数</label>
+      <select id="epochs">
+        <option value="80">80</option>
+        <option value="150" selected>150</option>
+        <option value="300">300</option>
+        <option value="600">600</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="40" style="width:110px">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <div class="arch" id="archLine">64 → 5　｜　パラメータ 325</div>
+        <div class="canvas-row">
+          <div class="padcol">
+            <canvas id="inpad" width="190" height="190"></canvas>
+            <div class="padbtns">
+              <button class="mini" id="clearPad">クリア</button>
+              <button class="mini" id="loadSample">お手本を入れる</button>
+            </div>
+            <div class="cap">ここにマウスで数字を描く（学習した数字のどれか）</div>
+          </div>
+          <div class="padcol">
+            <canvas id="seen" width="112" height="112"></canvas>
+            <div class="cap">ネットが見ている像<br>（R×R に縮小）</div>
+          </div>
+          <div class="padcol">
+            <canvas id="bars" width="212" height="190"></canvas>
+            <div class="cap">認識の内訳（各数字らしさ＝確率）</div>
+          </div>
+        </div>
+        <div style="width:100%">
+          <canvas id="tpl" width="520" height="210" style="width:100%"></canvas>
+          <div class="cap" id="tplCap" style="max-width:none">学習された「数字の特徴」（重み。<span style="color:var(--pos)">赤＝そこにインクがあれば+</span>／<span style="color:var(--neg)">青＝−</span>）</div>
+        </div>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">▶ 再生で学習が進みます。パッドに数字を描くと、その時点のネットの認識が右のバーに出ます。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1つ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1つ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📊 学習の状態</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="epNum">0</div><div class="lab">エポック</div></div>
+          <div class="stat"><div class="num" id="lossNum">—</div><div class="lab">損失（誤差）</div></div>
+          <div class="stat"><div class="num" id="trAcc">—</div><div class="lab">学習データ正解率</div></div>
+          <div class="stat"><div class="num" id="teAcc">—</div><div class="lab">テスト正解率</div></div>
+        </div>
+        <div style="margin-top:10px;text-align:center" class="status" id="statusLine">　</div>
+      </div>
+      <div class="card">
+        <h3>📉 損失と正解率の推移</h3>
+        <canvas id="chart" width="288" height="150" style="width:100%"></canvas>
+        <div class="legend" style="margin-top:8px;grid-template-columns:1fr 1fr">
+          <span><i style="background:var(--grad)"></i>損失</span>
+          <span><i style="background:var(--fire)"></i>学習データ正解率</span>
+          <span><i style="background:var(--goal)"></i>テスト正解率</span>
+          <span></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>🗂️ データの例（手書き風）</h3>
+        <canvas id="gallery" width="288" height="120" style="width:100%"></canvas>
+        <p class="note" style="margin:8px 0 0">
+          数字フォントを<b>低解像度に縮小</b>し、<b>回転・移動・拡大・ノイズ</b>をランダムに加えて「手書き風」に。
+          本物の MNIST（28×28）を思いっきり小さくしたミニ版です。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🧮 何をしている？</h3>
+        <div class="formula">y = softmax( W·x + b )</div>
+        <p class="note" style="margin:10px 0 0">
+          画像の各ピクセル x を重み W で足し合わせ、<b>softmax</b> で「どの数字らしいか」を確率に。
+          正解との誤差（交差エントロピー）を<b>逆伝播</b>して W を直します。
+          隠れ層なしなら W の各行は<b>数字のテンプレート画像</b>そのものになります。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🔍 見どころ</h3>
+        <p class="note" style="margin:0">
+          ・解像度を <b>8→14</b> に上げると細部が見え正解率↑（でも重い）。<br>
+          ・数字を <b>2→10 クラス</b>に増やすと難しくなる。<br>
+          ・枚数を増やすと<b>テスト正解率</b>（未知データ）が上がりやすい＝汎化。<br>
+          ・パッドに描いて、間違えやすい数字を探そう。<kbd>R</kbd> で再学習。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:var(--pos)"></i>重み ＋（あると数字らしい）</span>
+          <span><i style="background:var(--neg)"></i>重み −（あると数字らしくない）</span>
+          <span><i style="background:var(--fire)"></i>いちばん確からしい答え</span>
+          <span><i style="background:var(--accent)"></i>その他の候補</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1ステップ ・ <kbd>Space</kbd> 再生切替 ・ <kbd>R</kbd> 初期値を変えて再学習 ／
+    クラス数・解像度・枚数・隠れ層・学習率を変えると最初から学習し直します。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// ====================================================================
+// 乱数（シード固定・再現性のため）
+// ====================================================================
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15, 1|a); t=t+Math.imul(t^t>>>7, 61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }; }
+function makeGauss(rng){ return ()=>{ let u=0,v=0; while(u===0)u=rng(); while(v===0)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }; }
+
+// 隠れ層の活性化は ReLU 固定（MNIST の定番）
+const ACT = { f:z=>z>0?z:0, df:(z,a)=>z>0?1:0 };
+
+// ====================================================================
+// データ生成：数字フォントを描画 → 低解像度化 → 増強（回転/移動/拡大/ノイズ）
+// すべて ink ∈ [0,1] の R*R ベクトル、label はクラス番号
+// ====================================================================
+const gbig = document.createElement("canvas"); gbig.width=120; gbig.height=120;
+const gctx = gbig.getContext("2d");
+const dsmall = document.createElement("canvas");
+const dctx = dsmall.getContext("2d");
+
+// キャンバス（白地・黒インク）を R×R に縮小し ink=(255-luma)/255 で返す
+function toVector(src, R){
+  dsmall.width=R; dsmall.height=R;
+  dctx.fillStyle="#fff"; dctx.fillRect(0,0,R,R);
+  dctx.imageSmoothingEnabled=true;
+  dctx.drawImage(src,0,0,R,R);
+  const d=dctx.getImageData(0,0,R,R).data;
+  const v=new Float32Array(R*R);
+  for (let k=0;k<R*R;k++) v[k]=(255-d[k*4])/255;
+  return v;
+}
+
+// 1文字を増強しながら gbig に描く
+function renderGlyph(dg, rng){
+  const S=gbig.width;
+  gctx.setTransform(1,0,0,1,0,0);
+  gctx.fillStyle="#fff"; gctx.fillRect(0,0,S,S);
+  gctx.translate(S/2 + (rng()*2-1)*S*0.10, S/2 + (rng()*2-1)*S*0.11);
+  gctx.rotate((rng()*2-1)*0.32);                 // ±約18°
+  const sx=0.82+rng()*0.34, sy=0.82+rng()*0.34;
+  gctx.scale(sx, sy);
+  gctx.fillStyle="#000";
+  gctx.font='bold '+Math.round(S*0.74)+'px "Hiragino Sans","Yu Gothic",sans-serif';
+  gctx.textAlign="center"; gctx.textBaseline="middle";
+  gctx.fillText(String(dg), 0, 0);
+  gctx.setTransform(1,0,0,1,0,0);
+}
+
+function makeSet(digits, perClass, R, seedBase){
+  const out=[];
+  digits.forEach((dg,ci)=>{
+    for (let s=0;s<perClass;s++){
+      const rng=mulberry32((seedBase*131+dg*997+s*29+7)|0);
+      const gauss=makeGauss(rng);
+      renderGlyph(dg, rng);
+      const v=toVector(gbig,R);
+      for (let k=0;k<v.length;k++) v[k]=Math.max(0,Math.min(1, v[k]+gauss()*0.05));
+      out.push({v, label:ci, digit:dg});
+    }
+  });
+  return out;
+}
+
+// ====================================================================
+// ネット：入力P →（隠れ ReLU）→ 出力C（softmax）
+// ====================================================================
+function initNet(sizes, seed){
+  const rng=mulberry32((seed*104729+7)|0), g=makeGauss(rng);
+  const W=[], b=[];
+  for (let l=0;l<sizes.length-1;l++){
+    const fin=sizes[l], fout=sizes[l+1], last=(l===sizes.length-2);
+    const s=(last?1:Math.sqrt(2))/Math.sqrt(fin);   // 出力=Xavier / 隠れ=He
+    const m=[];
+    for (let i=0;i<fout;i++){ const row=new Array(fin); for (let j=0;j<fin;j++) row[j]=g()*s; m.push(row); }
+    W.push(m); b.push(new Array(fout).fill(0));
+  }
+  return {sizes:sizes.slice(), W, b};
+}
+function cloneNet(n){ return { sizes:n.sizes.slice(),
+  W:n.W.map(m=>m.map(r=>r.slice())), b:n.b.map(r=>r.slice()) }; }
+
+function forward(net, x){
+  const acts=[x], zs=[]; const M=net.W.length;
+  for (let l=0;l<M;l++){
+    const fout=net.W[l].length, z=new Array(fout), a=new Array(fout), prev=acts[l];
+    for (let i=0;i<fout;i++){ let s=net.b[l][i]; const row=net.W[l][i];
+      for (let j=0;j<row.length;j++) s+=row[j]*prev[j]; z[i]=s; }
+    if (l===M-1){                                  // softmax
+      let mx=-1e30; for (const v of z) if(v>mx)mx=v;
+      let sum=0; for (let i=0;i<fout;i++){ a[i]=Math.exp(z[i]-mx); sum+=a[i]; }
+      for (let i=0;i<fout;i++) a[i]/=sum;
+    } else { for (let i=0;i<fout;i++) a[i]=ACT.f(z[i]); }
+    zs.push(z); acts.push(a);
+  }
+  return {acts, zs, probs:acts[M]};
+}
+
+// ====================================================================
+// 状態
+// ====================================================================
+let R=8, DIGITS=[0,1,2,3,4], C=5, PER=20, HID=0, P=64;
+let eta=0.5, EPOCHS=150;
+let TRAIN=[], TEST=[], frames=[], epochOf=[], curNet=null;
+let dataSeed=1, initSeed=1, userVec=null;
+
+function sizesArr(){ const s=[P]; if(HID>0) s.push(HID); s.push(C); return s; }
+
+function evalSet(net, set){
+  let loss=0, correct=0;
+  for (const p of set){
+    const {probs}=forward(net, p.v);
+    loss += -Math.log(Math.max(1e-9, probs[p.label]));
+    let am=0; for (let c=1;c<C;c++) if(probs[c]>probs[am]) am=c;
+    if (am===p.label) correct++;
+  }
+  return {loss:loss/set.length, acc:correct/set.length};
+}
+
+// ====================================================================
+// 学習（フルバッチ＋モメンタム）してフレーム録画
+// ====================================================================
+function build(){
+  frames=[]; epochOf=[];
+  const sizes=sizesArr();
+  const net=initNet(sizes, initSeed);
+  const M=net.W.length;
+  const vW=net.W.map(m=>m.map(r=>r.map(()=>0)));
+  const vb=net.b.map(r=>r.map(()=>0));
+  const mom=0.9, n=TRAIN.length;
+  const stride=Math.max(1, Math.round(EPOCHS/200));
+  const rec=ep=>{ const tr=evalSet(net,TRAIN), te=evalSet(net,TEST);
+    frames.push({net:cloneNet(net), loss:tr.loss, tracc:tr.acc, teacc:te.acc}); epochOf.push(ep); };
+  rec(0);
+  for (let ep=1; ep<=EPOCHS; ep++){
+    const gW=net.W.map(m=>m.map(r=>r.map(()=>0))), gb=net.b.map(r=>r.map(()=>0));
+    for (const p of TRAIN){
+      const {acts,zs,probs}=forward(net, p.v);
+      let delta=probs.slice(); delta[p.label]-=1;      // softmax + 交差エントロピー
+      for (let l=M-1;l>=0;l--){
+        const prev=acts[l];
+        for (let i=0;i<delta.length;i++){
+          gb[l][i]+=delta[i]; const row=gW[l][i];
+          for (let j=0;j<prev.length;j++) row[j]+=delta[i]*prev[j];
+        }
+        if (l>0){
+          const da=new Array(prev.length).fill(0);
+          for (let i=0;i<delta.length;i++){ const row=net.W[l][i];
+            for (let j=0;j<prev.length;j++) da[j]+=row[j]*delta[i]; }
+          const nd=new Array(prev.length);
+          for (let j=0;j<prev.length;j++) nd[j]=da[j]*ACT.df(zs[l-1][j], acts[l][j]);
+          delta=nd;
+        }
+      }
+    }
+    for (let l=0;l<M;l++){
+      for (let i=0;i<net.W[l].length;i++){
+        const row=net.W[l][i], grow=gW[l][i], vrow=vW[l][i];
+        for (let j=0;j<row.length;j++){ vrow[j]=mom*vrow[j]-eta*grow[j]/n; row[j]+=vrow[j]; }
+        vb[l][i]=mom*vb[l][i]-eta*gb[l][i]/n; net.b[l][i]+=vb[l][i];
+      }
+    }
+    if (ep%stride===0 || ep===EPOCHS) rec(ep);
+  }
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+const $ = id => document.getElementById(id);
+const pad=$("inpad"), px=pad.getContext("2d");
+const seen=$("seen"), sx=seen.getContext("2d");
+const bcv=$("bars"), bx=bcv.getContext("2d");
+const tcv=$("tpl"), tx=tcv.getContext("2d");
+const ccv=$("chart"), cx=ccv.getContext("2d");
+const gcv=$("gallery"), gx=gcv.getContext("2d");
+const tile=document.createElement("canvas"); const tlx=tile.getContext("2d");
+let cur=0, timer=null, playing=false;
+
+const PAL=["#2f7fd9","#ff6b6b","#4ade80","#c084fc","#ffd24a",
+           "#f97316","#14b8a6","#e879f9","#64748b","#0ea5e9"];
+
+function lerp(a,b,t){ return a+(b-a)*t; }
+function mix(c0,c1,t){ return [Math.round(lerp(c0[0],c1[0],t)),
+  Math.round(lerp(c0[1],c1[1],t)), Math.round(lerp(c0[2],c1[2],t))]; }
+const C_RED=[255,107,107], C_BLUE=[47,93,138], C_WHITE=[247,249,252];
+
+// R×R ベクトルを発散配色（赤+/青−）でタイル描画
+function drawWeightTile(ctx, x, y, size, row, R){
+  let mx=1e-6; for (const w of row) mx=Math.max(mx, Math.abs(w));
+  tile.width=R; tile.height=R;
+  const img=tlx.createImageData(R,R);
+  for (let k=0;k<R*R;k++){
+    const n=row[k]/mx;
+    const col = n>=0 ? mix(C_WHITE,C_RED,n) : mix(C_WHITE,C_BLUE,-n);
+    img.data[k*4]=col[0]; img.data[k*4+1]=col[1]; img.data[k*4+2]=col[2]; img.data[k*4+3]=255;
+  }
+  tlx.putImageData(img,0,0);
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(tile,0,0,R,R,x,y,size,size);
+  ctx.strokeStyle="#d6dce8"; ctx.lineWidth=1; ctx.strokeRect(x+.5,y+.5,size,size);
+}
+// R×R ベクトルをグレースケール（インク）でタイル描画
+function drawInkTile(ctx, x, y, size, v, R){
+  tile.width=R; tile.height=R;
+  const img=tlx.createImageData(R,R);
+  for (let k=0;k<R*R;k++){ const g=Math.round(255*(1-v[k]));
+    img.data[k*4]=g; img.data[k*4+1]=g; img.data[k*4+2]=g; img.data[k*4+3]=255; }
+  tlx.putImageData(img,0,0);
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(tile,0,0,R,R,x,y,size,size);
+  ctx.strokeStyle="#d6dce8"; ctx.lineWidth=1; ctx.strokeRect(x+.5,y+.5,size,size);
+}
+
+// 学習された特徴（W[0] の各行を画像化）
+function drawTemplates(net){
+  tx.clearRect(0,0,tcv.width,tcv.height);
+  const rows=net.W[0], n=rows.length;
+  const showN = HID>0 ? Math.min(16,n) : n;
+  const cols = Math.min(showN, HID>0?8:(C<=5?5:5));
+  const rowsN = Math.ceil(showN/cols);
+  const gap=8, labH=16;
+  const size=Math.min((tcv.width-(cols+1)*gap)/cols,
+                      (tcv.height-(rowsN+1)*gap-rowsN*labH)/rowsN);
+  const gridW=cols*size+(cols-1)*gap, x0=(tcv.width-gridW)/2, y0=gap;
+  tx.font="bold 12px sans-serif"; tx.textAlign="center"; tx.textBaseline="middle";
+  for (let k=0;k<showN;k++){
+    const r=Math.floor(k/cols), c=k%cols;
+    const x=x0+c*(size+gap), y=y0+r*(size+gap+labH);
+    drawWeightTile(tx, x, y, size, rows[k], R);
+    tx.fillStyle="#1a2030";
+    tx.fillText(HID>0? ("#"+(k+1)) : String(DIGITS[k]), x+size/2, y+size+labH/2+2);
+  }
+}
+
+// 予測バー
+function drawBars(probs){
+  bx.clearRect(0,0,bcv.width,bcv.height);
+  const w=bcv.width, h=bcv.height, padL=26, padR=44, padV=8;
+  const barH=Math.min(26,(h-2*padV)/C - 4), gapY=(h-2*padV)/C;
+  let top=0; if(probs){ for(let c=1;c<C;c++) if(probs[c]>probs[top]) top=c; }
+  bx.textBaseline="middle"; bx.font="12px sans-serif";
+  for (let c=0;c<C;c++){
+    const y=padV+c*gapY+(gapY-barH)/2;
+    const val=probs?probs[c]:0;
+    bx.fillStyle="#5d6b82"; bx.textAlign="right";
+    bx.fillText(String(DIGITS[c]), padL-6, y+barH/2);
+    bx.fillStyle="#eef1f7"; bx.fillRect(padL,y,w-padL-padR,barH);
+    const bw=(w-padL-padR)*val;
+    bx.fillStyle = (probs && c===top) ? "#4ade80" : "#2f7fd9";
+    bx.fillRect(padL,y,bw,barH);
+    bx.fillStyle="#1a2030"; bx.textAlign="left";
+    bx.fillText((val*100).toFixed(0)+"%", padL+(w-padL-padR)+4, y+barH/2);
+  }
+  if (!probs){ bx.fillStyle="#8a97b0"; bx.textAlign="center";
+    bx.fillText("パッドに数字を描いてね", w/2, h-2); }
+}
+
+// 「ネットが見ている像」
+function drawSeen(){
+  sx.fillStyle="#f7f9fc"; sx.fillRect(0,0,seen.width,seen.height);
+  if (!userVec){ sx.fillStyle="#8a97b0"; sx.font="11px sans-serif";
+    sx.textAlign="center"; sx.textBaseline="middle";
+    sx.fillText("—", seen.width/2, seen.height/2); return; }
+  const m=6, size=Math.min(seen.width,seen.height)-2*m;
+  drawInkTile(sx, (seen.width-size)/2, (seen.height-size)/2, size, userVec, R);
+}
+
+// データギャラリー
+function drawGallery(){
+  gx.clearRect(0,0,gcv.width,gcv.height);
+  const cols=Math.min(TRAIN.length, C<=2?8:10), rowsN=2, gap=6, labH=0;
+  const size=Math.min((gcv.width-(cols+1)*gap)/cols,(gcv.height-(rowsN+1)*gap)/rowsN);
+  const gridW=cols*size+(cols-1)*gap, x0=(gcv.width-gridW)/2, y0=gap;
+  const rng=mulberry32((dataSeed*7+1)|0);
+  for (let r=0;r<rowsN;r++) for (let c=0;c<cols;c++){
+    const s=TRAIN[Math.floor(rng()*TRAIN.length)];
+    drawInkTile(gx, x0+c*(size+gap), y0+r*(size+gap), size, s.v, R);
+  }
+}
+
+// 損失・正解率チャート
+function drawChart(upto){
+  cx.clearRect(0,0,ccv.width,ccv.height);
+  const w=ccv.width,h=ccv.height,p=14;
+  const maxL=Math.max(...frames.map(f=>f.loss),1e-6);
+  const X=i=>p+i/Math.max(1,frames.length-1)*(w-2*p);
+  const YL=v=>h-p-(v/maxL)*(h-2*p);
+  const YA=v=>h-p-v*(h-2*p);
+  cx.strokeStyle="rgba(120,140,175,0.2)"; cx.beginPath(); cx.moveTo(p,h-p); cx.lineTo(w-p,h-p); cx.stroke();
+  const line=(key,col,yf)=>{ cx.strokeStyle=col; cx.lineWidth=2; cx.beginPath();
+    frames.forEach((f,i)=>{ if(i>upto)return; const xx=X(i),yy=yf(f[key]);
+      i===0?cx.moveTo(xx,yy):cx.lineTo(xx,yy); }); cx.stroke(); };
+  line("teacc","#c084fc",YA);
+  line("tracc","#4ade80",YA);
+  line("loss","#ffd24a",YL);
+  cx.fillStyle="#ff6b6b"; cx.beginPath(); cx.arc(X(upto),YL(frames[upto].loss),3.5,0,Math.PI*2); cx.fill();
+  cx.fillStyle="#5a6680"; cx.font="10px sans-serif"; cx.textAlign="right"; cx.fillText("エポック→",w-p,h-2);
+}
+
+// ユーザー入力を現在のネットで予測
+function predictUser(){
+  if (userVec && curNet){ const {probs}=forward(curNet,userVec); drawBars(probs); }
+  else drawBars(null);
+}
+
+// ====================================================================
+// フレーム描画
+// ====================================================================
+function renderFrame(i){
+  const f=frames[i]; if(!f) return;
+  curNet=f.net;
+  drawTemplates(curNet);
+  drawChart(i);
+  predictUser();
+  $("epNum").textContent=epochOf[i];
+  $("lossNum").textContent=f.loss.toFixed(3);
+  $("trAcc").textContent=(f.tracc*100).toFixed(0)+"%";
+  $("teAcc").textContent=(f.teacc*100).toFixed(0)+"%";
+  const badge=$("opbadge"), sl=$("statusLine");
+  if (i===0){ badge.textContent="初期状態"; sl.textContent="🎲 ランダムな重み"; sl.style.color="#8a97b0";
+    $("descText").textContent="まだ学習していない状態。特徴はでたらめ、認識も当てずっぽうです。▶ 再生で学習開始。"; }
+  else if (i>=frames.length-1){ badge.textContent="学習終了";
+    const gap=f.tracc-f.teacc;
+    if (f.teacc>0.9){ sl.textContent="✅ よく認識できた"; sl.style.color="#4ade80"; }
+    else if (gap>0.18){ sl.textContent="⚠ 過学習ぎみ（枚数を増やそう）"; sl.style.color="#c084fc"; }
+    else { sl.textContent="🙂 だいたい認識できた"; sl.style.color="#4ade80"; }
+    $("descText").textContent=`最終エポック。テスト正解率 ${(f.teacc*100).toFixed(0)}%。特徴（テンプレート）が数字の形に育っています。`; }
+  else { badge.textContent="学習中"; sl.textContent="🏃 重みを更新中…"; sl.style.color="#8a97b0";
+    $("descText").textContent=`エポック ${epochOf[i]}：誤差を逆伝播して重みを更新（損失 ${f.loss.toFixed(3)}）。特徴が少しずつ鮮明に。`; }
+  $("progress").value=i;
+  $("stepLabel").textContent=`${i} / ${frames.length-1}`;
+  $("prev").disabled=$("toStart").disabled=i<=0;
+  $("next").disabled=$("toEnd").disabled=i>=frames.length-1;
+}
+
+// ====================================================================
+// 手書きパッド
+// ====================================================================
+function clearPad(){ px.fillStyle="#fff"; px.fillRect(0,0,pad.width,pad.height);
+  userVec=null; drawSeen(); predictUser(); }
+function padXY(e){ const r=pad.getBoundingClientRect();
+  return [(e.clientX-r.left)*pad.width/r.width, (e.clientY-r.top)*pad.height/r.height]; }
+let drawing=false, lastX=0, lastY=0;
+pad.addEventListener("mousedown", e=>{ drawing=true; [lastX,lastY]=padXY(e);
+  px.fillStyle="#000"; px.beginPath(); px.arc(lastX,lastY,pad.width*0.08,0,Math.PI*2); px.fill(); updateInput(); });
+pad.addEventListener("mousemove", e=>{ if(!drawing)return; const [x,y]=padXY(e);
+  px.strokeStyle="#000"; px.lineWidth=pad.width*0.16; px.lineCap="round"; px.lineJoin="round";
+  px.beginPath(); px.moveTo(lastX,lastY); px.lineTo(x,y); px.stroke(); lastX=x; lastY=y; updateInput(); });
+window.addEventListener("mouseup", ()=>{ if(drawing){ drawing=false; updateInput(); } });
+function updateInput(){ userVec=toVector(pad,R); drawSeen(); predictUser(); }
+
+// お手本（テストデータからランダムに1枚パッドへ）
+function loadSample(){
+  if (!TEST.length) return;
+  const s=TEST[Math.floor(mulberry32((initSeed*13+epochOf[cur]+cur*3+1)|0)()*TEST.length)];
+  px.fillStyle="#fff"; px.fillRect(0,0,pad.width,pad.height);
+  const m=pad.width*0.06, size=pad.width-2*m;
+  drawInkTile(px, m, m, size, s.v, R);
+  userVec=toVector(pad,R); drawSeen(); predictUser();
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function rebuild(){
+  stop();
+  const cl=$("classes").value;
+  DIGITS = cl==="01"?[0,1] : cl==="04"?[0,1,2,3,4] : [0,1,2,3,4,5,6,7,8,9];
+  C=DIGITS.length;
+  R=parseInt($("res").value,10); P=R*R;
+  PER=parseInt($("per").value,10);
+  HID=parseInt($("hidden").value,10);
+  EPOCHS=parseInt($("epochs").value,10);
+  eta=parseInt($("rate").value,10)/100;
+  $("rateVal").textContent=eta.toFixed(2);
+  const sz=sizesArr(); let np=0;
+  for (let l=0;l<sz.length-1;l++) np+=sz[l]*sz[l+1]+sz[l+1];
+  $("archLine").textContent=`${sz.join(" → ")}　｜　パラメータ ${np}`;
+  $("tplCap").innerHTML = HID>0
+    ? '学習された「特徴検出器」（隠れ層の重み。<span style="color:var(--pos)">赤＝+</span>／<span style="color:var(--neg)">青＝−</span>）'
+    : '学習された「数字の特徴」（各数字の重み＝テンプレート。<span style="color:var(--pos)">赤＝そこにインクがあれば+</span>／<span style="color:var(--neg)">青＝−</span>）';
+  TRAIN=makeSet(DIGITS, PER, R, dataSeed);
+  TEST =makeSet(DIGITS, Math.max(8,Math.round(PER*0.6)), R, dataSeed+5000);
+  drawGallery();
+  build();
+  cur=0;
+  $("progress").max=frames.length-1;
+  userVec=null; clearPad();
+  renderFrame(0);
+  loadSample();          // 開始時にお手本を1枚入れておく
+}
+function regenerate(){ initSeed++; dataSeed++; rebuild(); }
+function goTo(i){ cur=Math.max(0,Math.min(frames.length-1,i)); renderFrame(cur); if(cur>=frames.length-1) stop(); }
+function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){ if(!playing)return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
+  const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 300-sp*4.6); }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+$("classes").onchange=rebuild;
+$("res").onchange=rebuild;
+$("per").onchange=rebuild;
+$("hidden").onchange=rebuild;
+$("rate").oninput=rebuild;
+$("epochs").onchange=rebuild;
+$("play").onclick=play;
+$("next").onclick=()=>{ stop(); goTo(cur+1); };
+$("prev").onclick=()=>{ stop(); goTo(cur-1); };
+$("toStart").onclick=()=>{ stop(); goTo(0); };
+$("toEnd").onclick=()=>{ stop(); goTo(frames.length-1); };
+$("progress").oninput=e=>{ stop(); goTo(parseInt(e.target.value,10)); };
+$("clearPad").onclick=clearPad;
+$("loadSample").onclick=loadSample;
+
+document.addEventListener("keydown", e=>{
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+  else if (e.key==="r"||e.key==="R"){ regenerate(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>

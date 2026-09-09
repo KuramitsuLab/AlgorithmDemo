@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>水くみ問題ビジュアライザ — DFS / BFS で状態グラフを探索</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --node:#38445f; --frontier:#ffd24a; --visited:#2f5d8a;
+    --current:#ff6b6b; --path:#4ade80; --start:#4ade80; --goal:#c084fc;
+    --water:#3aa0ff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input[type=number] { font-family:inherit; }
+  select, input[type=number] { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
+  input[type=number] { width:74px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+
+  .layout { display:grid; grid-template-columns:1fr 330px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .info table { width:100%; border-collapse:collapse; font-size:13px; }
+  .info td { padding:5px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .info td:first-child { color:var(--muted); white-space:nowrap; }
+  .ops { font-size:13px; color:var(--text); line-height:1.6; }
+  .ops b { color:var(--accent); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:50%; display:inline-block; flex:none; border:1px solid #0008; }
+
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  #pathSeq { font-family:Consolas,monospace; font-size:13px; color:var(--path); word-break:break-all; min-height:20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>💧 水くみ問題ビジュアライザ</h1>
+  <span class="sub">状態 (A,B) をノード、操作をエッジにした「状態グラフ」を DFS / BFS で探索する</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>探索アルゴリズム</label>
+      <select id="algo">
+        <option value="dfs">DFS（深さ優先・スタック）</option>
+        <option value="bfs" selected>BFS（幅優先・キュー）</option>
+      </select>
+    </div>
+    <div class="field"><label>バケツ A（容量）</label><input type="number" id="capA" min="1" max="12" value="5"></div>
+    <div class="field"><label>バケツ B（容量）</label><input type="number" id="capB" min="1" max="9" value="3"></div>
+    <div class="field"><label>目標（どちらかが）</label><input type="number" id="target" min="0" max="12" value="4"></div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="28" style="width:130px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="760" height="440"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">スタート (0,0) から、目標の水量を作れる状態を探します。▶ または「次へ」で1手ずつ。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1手戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1手進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📊 探索の進み具合</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="discCount">0</div><div class="lab">発見した状態</div></div>
+          <div class="stat"><div class="num" id="totalCount">0</div><div class="lab">全状態数</div></div>
+          <div class="stat"><div class="num" id="visitedCount">0</div><div class="lab">訪問した状態</div></div>
+          <div class="stat"><div class="num" id="frontierCount">0</div><div class="lab" id="frontierLab">フロンティア</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted)">見つけた手順（移動回数 <b id="pathLen" style="color:var(--path)">—</b>）</div>
+        <div id="pathSeq">—</div>
+      </div>
+
+      <div class="card">
+        <h3>💧 使える操作（エッジ）</h3>
+        <div class="ops">
+          <b>満たす</b>：A か B を容量いっぱいにする<br>
+          <b>空にする</b>：A か B を 0 にする<br>
+          <b>移し替える</b>：A→B / B→A（相手が満杯か自分が空になるまで）
+        </div>
+      </div>
+
+      <div class="card info">
+        <h3>⏱ アルゴリズムの性質</h3>
+        <table>
+          <tr><td>データ構造</td><td id="iStruct">—</td></tr>
+          <tr><td>探索順</td><td id="iOrder">—</td></tr>
+          <tr><td>最少手数</td><td id="iShortest">—</td></tr>
+          <tr><td>特徴</td><td id="iNote">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:#f7f9fc;border:1px dashed #9aa6bd"></i>未発見</span>
+          <span><i style="background:var(--frontier)"></i>未処理（候補）</span>
+          <span><i style="background:var(--visited)"></i>訪問済み</span>
+          <span><i style="background:var(--current)"></i>今の状態</span>
+          <span><i style="background:var(--path)"></i>経路</span>
+          <span><i style="background:var(--start);border:2px solid #fff6"></i>スタート</span>
+          <span><i style="background:var(--node);border:2px solid var(--goal)"></i>目標</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1手移動 ・ <kbd>Space</kbd> 再生切替 ／
+    A・B・目標を変えると状態グラフ（ノード数）が変わります。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+const INFO = {
+  dfs:{ struct:"スタック（後入れ先出し）", order:"1つの手を奥まで試す",
+        shortest:"× 保証されない", note:"行ける状態の奥へ進む。手数は最少とは限らない。" },
+  bfs:{ struct:"キュー（先入れ先出し）", order:"近い状態から順に広げる",
+        shortest:"○ 最少手数を保証", note:"スタートから手数の少ない状態を先に調べる。最短手順が得られる。" },
+};
+
+// ノード状態コード
+const UNDISC=0, FRONTIER=1, VISITED=2, CURRENT=3, PATH=4;
+
+let A=5, B=3, T=4;
+let N=0;                 // 状態数 (A+1)*(B+1)
+let frames=[], edges=[]; // 録画
+let cur=0, timer=null, playing=false;
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+const id  = (a,b) => a*(B+1)+b;
+const dec = i => [Math.floor(i/(B+1)), i%(B+1)];
+const isGoal = i => { const [a,b]=dec(i); return a===T || b===T; };
+
+// ====================================================================
+// 状態グラフの隣接：6操作（満たす2・空ける2・移し替え2）
+// ====================================================================
+function neighbors(i) {
+  const [a,b] = dec(i);
+  const res = [];
+  res.push([A, b]);                       // A を満たす
+  res.push([a, B]);                       // B を満たす
+  res.push([0, b]);                       // A を空ける
+  res.push([a, 0]);                       // B を空ける
+  const ab = Math.min(a, B-b); res.push([a-ab, b+ab]);  // A→B
+  const ba = Math.min(b, A-a); res.push([a+ba, b-ba]);  // B→A
+  const seen = new Set([i]); const out = [];
+  for (const [na,nb] of res) { const j=id(na,nb); if(!seen.has(j)){seen.add(j); out.push(j);} }
+  return out;
+}
+
+// ====================================================================
+// 探索＆録画（ノードを発見順に増やしていく）
+// ====================================================================
+function buildSearch(isBFS) {
+  N = (A+1)*(B+1);
+  frames = []; edges = [];
+  const edgeMap = new Map();
+  const state = new Uint8Array(N);            // UNDISC 初期
+  const parent = new Int32Array(N).fill(-1);
+  const inStruct = new Uint8Array(N);
+  const visited = new Uint8Array(N);
+  const stats = { disc:0, visited:0, frontier:0, pathLen:null };
+
+  let pathStr = null;
+  const snap = (desc, op) => frames.push({ state: state.slice(), stats:{...stats}, desc, op, pathStr });
+  const ekey = (u,v) => Math.min(u,v)+"-"+Math.max(u,v);
+  function addEdge(u,v) {
+    const k = ekey(u,v);
+    if (!edgeMap.has(k)) { const e={u:Math.min(u,v),v:Math.max(u,v),disc:frames.length,path:Infinity};
+                           edgeMap.set(k,e); edges.push(e); }
+    return edgeMap.get(k);
+  }
+
+  const start = id(0,0);
+  state[start] = FRONTIER; inStruct[start] = 1; stats.disc = 1; stats.frontier = 1;
+  snap(`スタート (0,0) を${isBFS?"キュー":"スタック"}に入れる`, "開始");
+  const container = [start];
+
+  while (container.length) {
+    const node = isBFS ? container.shift() : container.pop();
+    inStruct[node] = 0;
+    if (visited[node]) { stats.frontier = container.length; continue; }
+    visited[node] = 1; stats.visited++; state[node] = CURRENT; stats.frontier = container.length;
+    const [a,b] = dec(node);
+    snap(`(${a},${b}) を取り出して訪問（${isBFS?"キュー先頭":"スタック最上段"}）`, "訪問");
+
+    if (isGoal(node)) {
+      snap(`目標達成！ (${a},${b}) は ${T} を作れる状態`, "達成");
+      const path = []; let p = node;
+      while (p !== -1) { path.push(p); p = parent[p]; }
+      path.reverse();
+      stats.pathLen = path.length - 1;
+      pathStr = path.map(n => { const [pa,pb]=dec(n); return `(${pa},${pb})`; }).join(" → ");
+      for (let k=0;k<path.length;k++) {
+        state[path[k]] = PATH;
+        if (k>0) { const e=edgeMap.get(ekey(path[k-1],path[k])); if(e) e.path=frames.length; }
+        const [pa,pb] = dec(path[k]);
+        snap(`経路をたどる … (${pa},${pb})`, "経路");
+      }
+      snap(`完了：${stats.pathLen} 手で達成（訪問 ${stats.visited} 状態）`, "完了");
+      return;
+    }
+
+    for (const nb of neighbors(node)) {
+      addEdge(node, nb);                         // 発見したつながりを描く
+      if (!visited[nb] && !inStruct[nb]) {
+        parent[nb] = node; inStruct[nb] = 1; container.push(nb);
+        if (state[nb] === UNDISC) { state[nb] = FRONTIER; stats.disc++; }
+      }
+    }
+    stats.frontier = container.length;
+    snap(`(${a},${b}) から行ける状態を展開（候補 ${container.length}）`, "展開");
+    state[node] = VISITED;
+  }
+  snap(`全ての到達可能な状態を探索しました`, "終了");
+}
+
+// ====================================================================
+// レイアウト＆描画
+// ====================================================================
+let MARGIN=46, dx=60, dy=60;
+function layout() {
+  const maxW = 760;
+  dx = Math.min(Math.floor((maxW-2*MARGIN)/Math.max(A,1)), 96);
+  dy = dx;
+  cv.width  = 2*MARGIN + A*dx;
+  cv.height = 2*MARGIN + B*dy;
+}
+const px = a => MARGIN + a*dx;
+const py = b => MARGIN + (B-b)*dy;       // b=0 を下に
+const radius = () => Math.max(13, Math.min(dx,dy)*0.30);
+
+function drawEdge(e, upto) {
+  if (e.disc > upto) return;
+  const [ua,ub] = dec(e.u), [va,vb] = dec(e.v);
+  const x1=px(ua), y1=py(ub), x2=px(va), y2=py(vb);
+  // 直線が他ノードを貫かないよう少し弧を描く
+  const mx=(x1+x2)/2, my=(y1+y2)/2;
+  const ddx=x2-x1, ddy=y2-y1, len=Math.hypot(ddx,ddy)||1;
+  const off = Math.min(len*0.16, 26) * ((e.u+e.v)%2 ? 1 : -1);
+  const cx=mx - ddy/len*off, cy=my + ddx/len*off;
+  const isPath = e.path <= upto;
+  ctx.beginPath();
+  ctx.moveTo(x1,y1); ctx.quadraticCurveTo(cx,cy,x2,y2);
+  ctx.lineWidth = isPath ? 3.5 : 1.2;
+  ctx.strokeStyle = isPath ? "#4ade80" : "rgba(120,140,175,0.30)";
+  ctx.stroke();
+}
+
+const NODE_FILL = { [FRONTIER]:"#ffd24a", [VISITED]:"#2f5d8a", [CURRENT]:"#ff6b6b", [PATH]:"#4ade80" };
+
+function renderFrame(i) {
+  const f = frames[i]; if (!f) return;
+  const st = f.state;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 軸ラベル（A は横、B は縦）
+  ctx.fillStyle = "#5a6680"; ctx.font = "12px sans-serif";
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  for (let a=0;a<=A;a++) ctx.fillText("A="+a, px(a), cv.height-16);
+  ctx.save(); ctx.translate(14, cv.height/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText("B（縦）／ A（横）＝各バケツの水量", 0, 0); ctx.restore();
+
+  for (const e of edges) drawEdge(e, i);
+
+  const r = radius();
+  const startId = id(0,0);
+  for (let n=0;n<N;n++) {
+    const [a,b] = dec(n);
+    const x=px(a), y=py(b), s=st[n];
+    if (s === UNDISC) {                         // 未発見：薄い破線リング
+      ctx.beginPath(); ctx.arc(x,y,r*0.55,0,Math.PI*2);
+      ctx.setLineDash([3,3]); ctx.lineWidth=1; ctx.strokeStyle="rgba(120,140,175,0.35)";
+      ctx.stroke(); ctx.setLineDash([]);
+      continue;
+    }
+    // 発見済みノード
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle = NODE_FILL[s] || "#38445f"; ctx.fill();
+    // 目標ノードは紫枠、スタートは白枠
+    if (isGoal(n)) { ctx.lineWidth=3; ctx.strokeStyle="#c084fc"; ctx.stroke(); }
+    if (n === startId) { ctx.lineWidth=3; ctx.strokeStyle="rgba(40,55,80,0.55)"; ctx.stroke(); }
+    // ラベル
+    const dark = (s===FRONTIER||s===PATH||s===CURRENT);
+    ctx.fillStyle = dark ? "#06122a" : "#e6ecf5";
+    ctx.font = `bold ${Math.floor(r*0.62)}px sans-serif`;
+    ctx.fillText(`${a},${b}`, x, y);
+  }
+
+  // 統計
+  $("discCount").textContent = f.stats.disc;
+  $("totalCount").textContent = N;
+  $("visitedCount").textContent = f.stats.visited;
+  $("frontierCount").textContent = f.stats.frontier;
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op || "—";
+  $("pathLen").textContent = f.stats.pathLen ?? "—";
+  $("pathSeq").textContent = f.pathStr || "—";
+
+  $("progress").value = i;
+  $("stepLabel").textContent = `${i} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = i<=0;
+  $("next").disabled = $("toEnd").disabled = i>=frames.length-1;
+}
+
+function showInfo(key) {
+  const x = INFO[key];
+  $("iStruct").textContent = x.struct;
+  $("iOrder").textContent = x.order;
+  $("iShortest").textContent = x.shortest;
+  $("iNote").textContent = x.note;
+  $("frontierLab").textContent = key==="bfs" ? "キューの長さ" : "スタックの長さ";
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function rebuild() {
+  stop();
+  A = clampInt($("capA").value, 1, 12, 5);
+  B = clampInt($("capB").value, 1, 9, 3);
+  T = clampInt($("target").value, 0, Math.max(A,B), 4);
+  $("capA").value=A; $("capB").value=B; $("target").value=T;
+  layout();
+  buildSearch($("algo").value === "bfs");
+  cur = 0;
+  $("progress").max = frames.length-1;
+  showInfo($("algo").value);
+  renderFrame(0);
+}
+function clampInt(v,lo,hi,def){ v=parseInt(v,10); if(isNaN(v)) v=def; return Math.max(lo,Math.min(hi,v)); }
+
+function goTo(i){ cur=Math.max(0,Math.min(frames.length-1,i)); renderFrame(cur); if(cur>=frames.length-1) stop(); }
+function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){ if(!playing) return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
+  const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 560-sp*8); }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+$("algo").onchange = rebuild;
+$("capA").onchange = rebuild;
+$("capB").onchange = rebuild;
+$("target").onchange = rebuild;
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>

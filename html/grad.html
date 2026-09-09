@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>最適化アルゴリズム ビジュアライザ — AI（学習）の心臓を見る</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --curve:#5da9ff; --ball:#ff6b6b; --grad:#ffd24a; --step:#4ade80; --minima:#c084fc;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  input[type=range] { accent-color:var(--accent); }
+  .rateval { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+  .layout { display:grid; grid-template-columns:1fr 320px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .formula { font-family:Consolas,monospace; font-size:13.5px; background:var(--panel2);
+    border-radius:8px; padding:10px 12px; color:var(--text); text-align:center; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:3px; display:inline-block; flex:none; }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  .status { font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📉 最適化アルゴリズム ビジュアライザ</h1>
+  <span class="sub">AIの学習＝「坂を下って誤差を最小化」する仕組みを、オプティマイザごとに見比べる</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>最適化アルゴリズム</label>
+      <select id="opt">
+        <option value="sgd">SGD（勾配降下法）</option>
+        <option value="momentum">Momentum（慣性）</option>
+        <option value="adagrad">AdaGrad</option>
+        <option value="rmsprop">RMSProp</option>
+        <option value="adam">Adam</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>関数（誤差の地形）</label>
+      <select id="func">
+        <option value="bowl">お椀（谷が1つ・凸）</option>
+        <option value="double">二つの谷（局所最適に注意）</option>
+        <option value="bumpy">でこぼこ（局所最適だらけ）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>学習率 η = <span class="rateval" id="rateVal">0.30</span></label>
+      <input type="range" id="rate" min="1" max="210" value="30" style="width:180px">
+    </div>
+    <div class="field">
+      <label>スタート位置 x = <span class="rateval" id="startVal">-4.0</span></label>
+      <input type="range" id="start" min="-50" max="50" value="-40" style="width:160px">
+    </div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="22" style="width:120px">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="760" height="430"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">アルゴリズム・学習率・スタート位置を決めて、▶ または「次へ」でボールを谷へ下らせましょう。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1ステップ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1ステップ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>🧮 更新式 — <span id="optName">SGD</span></h3>
+        <div class="formula" id="formula">x ← x − η·f′(x)</div>
+        <p class="note" id="optNote" style="margin:10px 0 0">
+          最も基本。勾配（坂の傾き）の <b>逆向き</b> に、一定の学習率で少しずつ下る。
+        </p>
+      </div>
+      <div class="card">
+        <h3>📊 現在の状態</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="stepNum">0</div><div class="lab">ステップ</div></div>
+          <div class="stat"><div class="num" id="xNum">—</div><div class="lab">x（パラメータ）</div></div>
+          <div class="stat"><div class="num" id="lossNum">—</div><div class="lab">f(x)（損失）</div></div>
+          <div class="stat"><div class="num" id="gradNum">—</div><div class="lab">f′(x)（勾配）</div></div>
+        </div>
+        <div style="margin-top:10px;text-align:center" class="status" id="statusLine">　</div>
+      </div>
+      <div class="card">
+        <h3>📉 損失の推移</h3>
+        <canvas id="loss" width="288" height="150" style="width:100%"></canvas>
+      </div>
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:var(--curve)"></i>誤差の地形 f(x)</span>
+          <span><i style="background:var(--ball)"></i>今の位置</span>
+          <span><i style="background:var(--grad)"></i>勾配（接線）</span>
+          <span><i style="background:var(--step)"></i>更新の一歩</span>
+          <span><i style="background:var(--minima)"></i>最小値</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>💡 アルゴリズムの違い</h3>
+        <p class="note" style="margin:0">
+          <b>SGD</b>：素朴。谷が細長いと振動しがち。<br>
+          <b>Momentum</b>：慣性で加速し振動を抑える。<br>
+          <b>AdaGrad</b>：よく動いた方向は歩幅を縮める。<br>
+          <b>RMSProp</b>：AdaGrad の歩幅減衰を緩和。<br>
+          <b>Adam</b>：Momentum＋RMSProp。実務の定番。<br>
+          「二つの谷」では、スタート位置で落ちる谷（=局所最適）が変わる。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1ステップ ・ <kbd>Space</kbd> 再生切替 ／
+    アルゴリズム・学習率・スタート・関数を変えると即やり直します。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// 関数定義：f と 解析的な導関数 f'、定義域、最小値（描画用）
+const FUNCS = {
+  bowl: {
+    f:  x => 0.4*x*x,
+    df: x => 0.8*x,
+    xmin:-5, xmax:5, minima:[0],
+    label:"f(x) = 0.4x²（谷が1つ）",
+  },
+  double: {
+    f:  x => 0.06*x*x*x*x - 0.5*x*x + 0.2*x,
+    df: x => 0.24*x*x*x - x + 0.2,
+    xmin:-3.6, xmax:3.6, minima:[-2.0, 2.0],
+    label:"f(x) = 0.06x⁴ − 0.5x² + 0.2x（谷が2つ）",
+  },
+  bumpy: {
+    f:  x => 0.15*x*x + Math.cos(2*x),
+    df: x => 0.30*x - 2*Math.sin(2*x),
+    xmin:-5, xmax:5, minima:[],
+    label:"f(x) = 0.15x² + cos(2x)（でこぼこ）",
+  },
+};
+
+// 最適化アルゴリズム：make() で内部状態を持つ更新器を生成。
+// step(x, g) は「次の x」を返す。eta は外側のグローバル学習率を参照。
+const OPTIMIZERS = {
+  sgd: {
+    name:"SGD",
+    formula:"x ← x − η·f′(x)",
+    note:"最も基本。勾配（坂の傾き）の <b>逆向き</b> に、一定の学習率で少しずつ下る。",
+    make(){ return (x,g) => x - eta*g; },
+  },
+  momentum: {
+    name:"Momentum",
+    formula:"v ← β·v − η·f′(x) ;  x ← x + v",
+    note:"過去の速度 v を溜めて谷を転がる（β=0.9）。振動を抑えつつ <b>加速</b> する。",
+    make(){ let v=0; const beta=0.9;
+      return (x,g) => { v = beta*v - eta*g; return x + v; }; },
+  },
+  adagrad: {
+    name:"AdaGrad",
+    formula:"G ← G + g² ;  x ← x − η·g / √(G+ε)",
+    note:"勾配の二乗を <b>累積</b> し、よく動いた方向ほど歩幅を縮める。後半は自然に慎重になる。",
+    make(){ let G=0; const eps=1e-8;
+      return (x,g) => { G += g*g; return x - eta*g/Math.sqrt(G+eps); }; },
+  },
+  rmsprop: {
+    name:"RMSProp",
+    formula:"E ← ρ·E + (1−ρ)·g² ;  x ← x − η·g / √(E+ε)",
+    note:"二乗勾配を <b>指数移動平均</b>（ρ=0.9）に。AdaGrad の歩幅が縮みすぎる問題を緩和。",
+    make(){ let E=0; const rho=0.9, eps=1e-8;
+      return (x,g) => { E = rho*E + (1-rho)*g*g; return x - eta*g/Math.sqrt(E+eps); }; },
+  },
+  adam: {
+    name:"Adam",
+    formula:"m,v を移動平均 → x ← x − η·m̂ / (√v̂ + ε)",
+    note:"Momentum（1次）＋RMSProp（2次）の <b>良いとこ取り</b>。実務で最も使われる定番。",
+    make(){ let m=0, v=0, t=0; const b1=0.9, b2=0.999, eps=1e-8;
+      return (x,g) => {
+        t++; m = b1*m + (1-b1)*g; v = b2*v + (1-b2)*g*g;
+        const mh = m/(1-Math.pow(b1,t)), vh = v/(1-Math.pow(b2,t));
+        return x - eta*mh/(Math.sqrt(vh)+eps);
+      }; },
+  },
+};
+
+let F = FUNCS.bowl;
+let OPT = OPTIMIZERS.sgd;
+let eta = 0.30, x0 = -4.0;
+let frames = [];
+let cur = 0, timer = null, playing = false;
+let yLo = 0, yHi = 1;
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+const lcv = $("loss"), lctx = lcv.getContext("2d");
+const PAD = 46;
+
+// ====================================================================
+// 反復を回してフレーム録画
+// ====================================================================
+function build() {
+  frames = [];
+  // y 範囲をサンプリングして決定
+  let lo = Infinity, hi = -Infinity;
+  for (let x = F.xmin; x <= F.xmax; x += (F.xmax-F.xmin)/200) {
+    const y = F.f(x); if (y<lo) lo=y; if (y>hi) hi=y;
+  }
+  const pad = (hi-lo)*0.12 + 1e-6;
+  yLo = lo - pad*0.5; yHi = hi + pad;
+
+  const step = OPT.make();          // 内部状態つきの更新器
+  let x = x0;
+  const eps = 1e-3, maxSteps = 120;
+  const bound = F.xmax + (F.xmax-F.xmin)*0.6;
+  let status = "走行中";
+  frames.push({ step:0, x, fx:F.f(x), grad:F.df(x), xnext:null, status:"開始",
+                desc:`スタート x = ${x.toFixed(2)}。ここでの損失 f(x) = ${F.f(x).toFixed(3)}` });
+  for (let i=1;i<=maxSteps;i++) {
+    const g = F.df(x);
+    const xnext = step(x, g);
+    // 直前フレームに「次の一歩」を記録
+    const prev = frames[frames.length-1];
+    prev.xnext = xnext;
+    if (!isFinite(xnext) || Math.abs(xnext) > bound) {
+      prev.status = "発散";
+      prev.desc = `勾配が大きく、x が大きく飛んだ → 発散！ 学習率 η=${eta} が大きすぎる`;
+      status = "発散"; break;
+    }
+    x = xnext;
+    const g2 = F.df(x);
+    const converged = Math.abs(g2) < eps;
+    frames.push({ step:i, x, fx:F.f(x), grad:g2, xnext:null,
+                  status: converged ? "収束" : "走行中",
+                  desc: `更新 ${i}: ${OPT.name} で x = ${x.toFixed(3)}　（損失 ${F.f(x).toFixed(3)}）` });
+    if (converged) {
+      frames[frames.length-1].desc = `収束！ 勾配がほぼ 0（傾きが平ら）→ 谷の底に到達`;
+      status = "収束"; break;
+    }
+  }
+  if (status==="走行中") frames[frames.length-1].status = "途中";
+}
+
+// ====================================================================
+// 座標変換 & 描画
+// ====================================================================
+const px = x => PAD + (x - F.xmin)/(F.xmax - F.xmin) * (cv.width - 2*PAD);
+const py = y => cv.height - PAD - (y - yLo)/(yHi - yLo) * (cv.height - 2*PAD);
+
+function drawCurve() {
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 軸
+  ctx.strokeStyle = "rgba(120,140,175,0.25)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, cv.height-PAD); ctx.lineTo(cv.width-PAD, cv.height-PAD); ctx.stroke();
+  ctx.fillStyle = "#5a6680"; ctx.font = "12px sans-serif"; ctx.textAlign="center";
+  for (let x=Math.ceil(F.xmin); x<=F.xmax; x++) {
+    ctx.fillText(x.toString(), px(x), cv.height-PAD+16);
+  }
+  ctx.textAlign="left"; ctx.fillText("x（パラメータ）", cv.width-PAD-90, cv.height-PAD+30);
+  ctx.save(); ctx.translate(16, cv.height/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText("f(x)：誤差（損失）", -50, 0); ctx.restore();
+  // 最小値の縦線
+  for (const m of F.minima) {
+    ctx.strokeStyle = "rgba(192,132,252,0.35)"; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(px(m), py(yHi)); ctx.lineTo(px(m), cv.height-PAD); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle="#c084fc"; ctx.beginPath(); ctx.arc(px(m), py(F.f(m)), 4, 0, Math.PI*2); ctx.fill();
+  }
+  // 曲線
+  ctx.strokeStyle = "#5da9ff"; ctx.lineWidth = 2.5; ctx.beginPath();
+  let first = true;
+  for (let x=F.xmin; x<=F.xmax; x += (F.xmax-F.xmin)/300) {
+    const X=px(x), Y=py(F.f(x));
+    if (first){ctx.moveTo(X,Y); first=false;} else ctx.lineTo(X,Y);
+  }
+  ctx.stroke();
+}
+
+function renderFrame(i) {
+  const f = frames[i]; if (!f) return;
+  drawCurve();
+  const X = px(f.x), Y = py(f.fx);
+
+  // 接線（勾配）
+  const slope = f.grad;
+  const dxw = (F.xmax-F.xmin)*0.14;
+  ctx.strokeStyle = "#ffd24a"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px(f.x-dxw), py(f.fx - slope*dxw));
+  ctx.lineTo(px(f.x+dxw), py(f.fx + slope*dxw));
+  ctx.stroke();
+
+  // 更新の一歩（次の x へ）
+  if (f.xnext !== null && isFinite(f.xnext)) {
+    const xn = Math.max(F.xmin, Math.min(F.xmax, f.xnext));
+    const Yb = cv.height - PAD;
+    // x 軸上の移動を緑矢印で
+    ctx.strokeStyle = "#4ade80"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(X, Yb-4); ctx.lineTo(px(xn), Yb-4); ctx.stroke();
+    // 矢印先端
+    const dir = Math.sign(xn - f.x) || 1;
+    ctx.fillStyle = "#4ade80"; ctx.beginPath();
+    ctx.moveTo(px(xn), Yb-4); ctx.lineTo(px(xn)-dir*9, Yb-9); ctx.lineTo(px(xn)-dir*9, Yb+1); ctx.fill();
+    // 落下先のゴースト
+    ctx.strokeStyle = "rgba(74,222,128,0.5)"; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(px(xn), Yb); ctx.lineTo(px(xn), py(F.f(f.xnext))); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(74,222,128,0.6)"; ctx.beginPath();
+    ctx.arc(px(xn), py(F.f(f.xnext)), 6, 0, Math.PI*2); ctx.fill();
+  }
+  // 現在地から x 軸への点線
+  ctx.strokeStyle = "rgba(255,107,107,0.4)"; ctx.setLineDash([3,3]); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X, cv.height-PAD); ctx.stroke();
+  ctx.setLineDash([]);
+  // ボール
+  ctx.fillStyle = "#ff6b6b"; ctx.beginPath(); ctx.arc(X, Y, 9, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth=1.5; ctx.stroke();
+
+  // 統計
+  $("stepNum").textContent = f.step;
+  $("xNum").textContent = f.x.toFixed(2);
+  $("lossNum").textContent = f.fx.toFixed(3);
+  $("gradNum").textContent = f.grad.toFixed(3);
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.status;
+  const sl = $("statusLine");
+  if (f.status==="収束"){ sl.textContent="✅ 収束（谷の底）"; sl.style.color="#4ade80"; }
+  else if (f.status==="発散"){ sl.textContent="⚠️ 発散（η が大きすぎ）"; sl.style.color="#ff6b6b"; }
+  else { sl.textContent="🏃 学習中…"; sl.style.color="#8a97b0"; }
+
+  $("progress").value = i;
+  $("stepLabel").textContent = `${i} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = i<=0;
+  $("next").disabled = $("toEnd").disabled = i>=frames.length-1;
+
+  drawLoss(i);
+}
+
+function drawLoss(uptoIdx) {
+  lctx.clearRect(0,0,lcv.width,lcv.height);
+  const losses = frames.slice(0, uptoIdx+1).map(f => f.fx);
+  if (losses.length===0) return;
+  const mx = Math.max(...frames.map(f=>f.fx)), mn = Math.min(...frames.map(f=>f.fx));
+  const p = 12, w = lcv.width, h = lcv.height;
+  const X = i => p + i/Math.max(1,frames.length-1)*(w-2*p);
+  const Y = v => h-p - (v-mn)/Math.max(1e-9,mx-mn)*(h-2*p);
+  // 軸
+  lctx.strokeStyle="rgba(120,140,175,0.2)"; lctx.beginPath();
+  lctx.moveTo(p,h-p); lctx.lineTo(w-p,h-p); lctx.stroke();
+  // 線
+  lctx.strokeStyle="#ffd24a"; lctx.lineWidth=2; lctx.beginPath();
+  losses.forEach((v,i)=>{ const xx=X(i), yy=Y(v); if(i===0)lctx.moveTo(xx,yy); else lctx.lineTo(xx,yy); });
+  lctx.stroke();
+  // 現在点
+  const li = losses.length-1;
+  lctx.fillStyle="#ff6b6b"; lctx.beginPath(); lctx.arc(X(li), Y(losses[li]), 4, 0, Math.PI*2); lctx.fill();
+  lctx.fillStyle="#5a6680"; lctx.font="10px sans-serif"; lctx.textAlign="left";
+  lctx.fillText("損失", p, p); lctx.textAlign="right"; lctx.fillText("ステップ→", w-p, h-2);
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function rebuild() {
+  stop();
+  F = FUNCS[$("func").value];
+  OPT = OPTIMIZERS[$("opt").value];
+  eta = parseInt($("rate").value,10)/100;
+  // スタートは関数の定義域に合わせて -1..1 → xmin..xmax
+  const t = parseInt($("start").value,10)/50;        // -1..1
+  x0 = t * (t<0 ? -F.xmin : F.xmax);                 // 定義域の端へマップ
+  $("rateVal").textContent = eta.toFixed(2);
+  $("startVal").textContent = x0.toFixed(1);
+  // 更新式カードをアルゴリズムに合わせて更新
+  $("optName").textContent = OPT.name;
+  $("formula").textContent = OPT.formula;
+  $("optNote").innerHTML = OPT.note;
+  build();
+  cur = 0;
+  $("progress").max = frames.length-1;
+  renderFrame(0);
+}
+function goTo(i){ cur=Math.max(0,Math.min(frames.length-1,i)); renderFrame(cur); if(cur>=frames.length-1) stop(); }
+function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){ if(!playing) return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
+  const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 620-sp*9); }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+$("opt").onchange = rebuild;
+$("func").onchange = rebuild;
+$("rate").oninput = rebuild;
+$("start").oninput = rebuild;
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>

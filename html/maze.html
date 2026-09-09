@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>迷路探索ビジュアライザ — DFS / BFS / ランダムウォーク</title>
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --panel2: #eef1f7;
+    --line: #d6dce8;
+    --text: #1a2030;
+    --muted: #5d6b82;
+    --accent: #2f7fd9;
+    --wall: #2b3344;
+    --open: #e9edf5;
+    --visited: #2f5d8a;
+    --frontier: #ffd24a;
+    --current: #ff6b6b;
+    --path: #4ade80;
+    --start: #4ade80;
+    --goal: #c084fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  .controls {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; margin-bottom: 18px;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  select, button { font-family: inherit; }
+  select {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; cursor: pointer;
+  }
+  button {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 14px; font-size: 14px; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  button:hover:not(:disabled) { background: #e4eaf5; border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #1f6bc4; }
+  .spacer { flex: 1; }
+
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+
+  .stage {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px; display: flex; flex-direction: column; align-items: center;
+  }
+  canvas { background: var(--wall); border-radius: 8px; max-width: 100%; height: auto; image-rendering: pixelated; }
+  .desc {
+    margin-top: 14px; min-height: 22px; font-size: 14px; align-self: stretch;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .desc .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+
+  .side { display: flex; flex-direction: column; gap: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h3 { margin: 0 0 12px; font-size: 14px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat { text-align: center; background: var(--panel2); border-radius: 8px; padding: 8px 4px; }
+  .stat .num { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .lab { font-size: 11px; color: var(--muted); }
+  .info table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .info td { padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .info td:first-child { color: var(--muted); white-space: nowrap; }
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 13px; height: 13px; border-radius: 3px; display: inline-block; flex: none; }
+
+  .playbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 18px 0; }
+  #progress { flex: 1; min-width: 180px; accent-color: var(--accent); }
+  .step-label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px;
+        border-radius: 5px; padding: 1px 6px; font-size: 12px; font-family: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 迷路探索ビジュアライザ</h1>
+  <span class="sub">DFS（深さ優先）・BFS（幅優先）・ランダムウォーク を手を動かして比べる</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>探索アルゴリズム</label>
+      <select id="algo">
+        <option value="dfs">DFS（深さ優先・スタック）</option>
+        <option value="bfs">BFS（幅優先・キュー）</option>
+        <option value="astar">A*（エースター・最短＆賢い）</option>
+        <option value="wallL">壁伝い・左手法（左手を壁に）</option>
+        <option value="wallR">壁伝い・右手法（右手を壁に）</option>
+        <option value="random">ランダムウォーク</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>迷路サイズ</label>
+      <select id="size">
+        <option value="11">11 × 11（小）</option>
+        <option value="15" selected>15 × 21</option>
+        <option value="21">21 × 31（大）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>枝分かれ</label>
+      <select id="branch">
+        <option value="long">ひかえめ（長い一本道）</option>
+        <option value="mid">標準</option>
+        <option value="many" selected>多め（分岐だらけ）</option>
+        <option value="loop">とても多い（ループあり）</option>
+      </select>
+    </div>
+    <button id="newMaze">🌀 新しい迷路</button>
+    <button id="rerun">↻ 探索やり直し</button>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="30" style="width:140px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="600" height="430"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">「新しい迷路」を作り、▶ または「次へ」で探索を1歩ずつ見てみましょう。</span>
+        </div>
+      </div>
+
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1歩戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1歩進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📊 探索の進み具合</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="visitedCount">0</div><div class="lab">訪問したマス</div></div>
+          <div class="stat"><div class="num" id="frontierCount">0</div><div class="lab" id="frontierLab">フロンティア</div></div>
+          <div class="stat"><div class="num" id="stepCount">0</div><div class="lab">移動した歩数</div></div>
+          <div class="stat"><div class="num" id="pathCount">—</div><div class="lab">最終経路の長さ</div></div>
+        </div>
+      </div>
+
+      <div class="card info">
+        <h3>⏱ アルゴリズムの性質</h3>
+        <table>
+          <tr><td>データ構造</td><td id="iStruct">—</td></tr>
+          <tr><td>時間計算量</td><td id="iTime">—</td></tr>
+          <tr><td>空間計算量</td><td id="iSpace">—</td></tr>
+          <tr><td>最短経路</td><td id="iShortest">—</td></tr>
+          <tr><td>特徴</td><td id="iNote">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:var(--open)"></i>通路</span>
+          <span><i style="background:var(--wall)"></i>壁</span>
+          <span><i style="background:var(--frontier)"></i>未処理（次の候補）</span>
+          <span><i style="background:var(--visited)"></i>訪問済み</span>
+          <span><i style="background:var(--current)"></i>今いるマス</span>
+          <span><i style="background:var(--path)"></i>見つけた経路</span>
+          <span><i style="background:var(--start)"></i>スタート (S)</span>
+          <span><i style="background:var(--goal)"></i>ゴール (G)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1歩移動 ・ <kbd>Space</kbd> 再生切替 ・ <kbd>N</kbd> 新しい迷路
+  </p>
+</div>
+
+<script>
+"use strict";
+
+const INFO = {
+  dfs:    { struct:"スタック（後入れ先出し）", time:"O(V + E)", space:"O(V)",
+            shortest:"× 保証されない", note:"行けるだけ奥へ進み、行き止まりで戻る。記憶は少ないが遠回りしがち。" },
+  bfs:    { struct:"キュー（先入れ先出し）", time:"O(V + E)", space:"O(V)",
+            shortest:"○ 最短を保証（重みなし）", note:"近いマスから波紋状に広げる。最短経路が必ず得られる。" },
+  astar:  { struct:"優先度付きキュー（f = g + h）", time:"O(E)（ヒューリスティック次第）", space:"O(V)",
+            shortest:"○ 最短を保証（h が妥当なら）", note:"ゴールへの推定距離 h を足した f が小さいマスを優先。BFS より無駄な探索が少ない。" },
+  random: { struct:"なし（その場で乱択）", time:"期待値は大きい（不定）", space:"O(1)",
+            shortest:"× 保証されない", note:"毎回ランダムに隣へ。同じ所を何度も通る。運次第で非常に遅い。" },
+  wallL:  { struct:"なし（向き＋左手の規則）", time:"O(壁の長さ)", space:"O(1)",
+            shortest:"× 保証されない", note:"左手を壁につけたまま進む。ループの無い迷路なら必ずゴールに着くが遠回り。" },
+  wallR:  { struct:"なし（向き＋右手の規則）", time:"O(壁の長さ)", space:"O(1)",
+            shortest:"× 保証されない", note:"右手を壁につけたまま進む。左手法と対称。地図も座標も持たずに解ける。" },
+};
+
+// セルの状態コード
+const WALL=0, OPEN=1, FRONTIER=2, VISITED=3, CURRENT=4, PATH=5;
+const COLOR = {
+  [WALL]:"#2b3344", [OPEN]:"#e9edf5", [FRONTIER]:"#ffd24a",
+  [VISITED]:"#2f5d8a", [CURRENT]:"#ff6b6b", [PATH]:"#4ade80",
+};
+
+let W=0, H=0;            // 迷路の列数・行数（奇数）
+let grid=null;           // Uint8Array: 壁(0) / 通路(1) — 迷路の地形
+let startIdx=0, goalIdx=0;
+let frames=[];           // 各ステップのスナップショット
+let cur=0;
+let timer=null, playing=false;
+
+const $ = id => document.getElementById(id);
+const cv = $("cv");
+const ctx = cv.getContext("2d");
+
+const idx = (r,c) => r*W + c;
+const rc  = i => [Math.floor(i/W), i%W];
+
+// ====================================================================
+// 迷路生成（Growing Tree 法）— 必ずゴールまで道がつながる。
+// 「次に伸ばすマス」を active リストからどう選ぶかで枝分かれが変わる:
+//   いつも最新を選ぶ → 再帰的バックトラッカー（長い一本道・分岐少）
+//   ランダムに選ぶ   → Prim 風（分岐だらけ・行き止まり多）
+//   randPick はランダム選択する確率。さらに braid で壁を抜いてループを作る。
+// ====================================================================
+const BRANCH_PRESET = {
+  long: { randPick: 0.0, braid: 0.0 },   // ひかえめ
+  mid:  { randPick: 0.4, braid: 0.0 },   // 標準
+  many: { randPick: 0.85, braid: 0.0 },  // 多め
+  loop: { randPick: 0.85, braid: 0.18 }, // とても多い（ループあり）
+};
+
+function generateMaze() {
+  const { randPick, braid } = BRANCH_PRESET[$("branch").value] || BRANCH_PRESET.many;
+  // 通路は奇数座標。全部壁で初期化。
+  grid = new Uint8Array(W*H).fill(WALL);
+  const visited = new Uint8Array(W*H);
+  const dirs = [[-2,0],[2,0],[0,-2],[0,2]];
+
+  const active = [[1,1]];
+  grid[idx(1,1)] = OPEN; visited[idx(1,1)] = 1;
+  while (active.length) {
+    // active から1つ選ぶ：確率 randPick でランダム、それ以外は最新
+    const ai = Math.random() < randPick
+      ? Math.floor(Math.random()*active.length)
+      : active.length-1;
+    const [r,c] = active[ai];
+    const cand = [];
+    for (const [dr,dc] of dirs) {
+      const nr=r+dr, nc=c+dc;
+      if (nr>0 && nr<H-1 && nc>0 && nc<W-1 && !visited[idx(nr,nc)]) cand.push([nr,nc,dr,dc]);
+    }
+    if (cand.length === 0) {                 // 伸ばせない → active から外す
+      active.splice(ai,1);
+      continue;
+    }
+    const [nr,nc,dr,dc] = cand[Math.floor(Math.random()*cand.length)];
+    grid[idx(r+dr/2, c+dc/2)] = OPEN;        // 間の壁を壊す
+    grid[idx(nr,nc)] = OPEN;
+    visited[idx(nr,nc)] = 1;
+    active.push([nr,nc]);
+  }
+
+  if (braid > 0) braidMaze(braid);           // 行き止まりを減らしてループを作る
+
+  startIdx = idx(1,1);
+  goalIdx  = idx(H-2, W-2);
+}
+
+// 行き止まり（通路の隣が1方向だけ）を確率 p で壊し、ループ＝合流を増やす
+function braidMaze(p) {
+  const dirs = [[-2,0],[2,0],[0,-2],[0,2]];
+  for (let r=1;r<H-1;r+=2) for (let c=1;c<W-1;c+=2) {
+    // この通路マスから出ている通路の数を数える
+    let open=0;
+    for (const [dr,dc] of dirs) if (grid[idx(r+dr/2,c+dc/2)]===OPEN) open++;
+    if (open !== 1 || Math.random() >= p) continue;   // 行き止まりのみ対象
+    // まだ閉じている方向（隣も範囲内）を集めて1つ開ける
+    const closed = [];
+    for (const [dr,dc] of dirs) {
+      const nr=r+dr, nc=c+dc;
+      if (nr>0 && nr<H-1 && nc>0 && nc<W-1 && grid[idx(r+dr/2,c+dc/2)]===WALL) closed.push([dr,dc]);
+    }
+    if (closed.length) {
+      const [dr,dc] = closed[Math.floor(Math.random()*closed.length)];
+      grid[idx(r+dr/2, c+dc/2)] = OPEN;
+    }
+  }
+}
+
+function neighbors(i) {
+  const [r,c] = rc(i);
+  const out = [];
+  // 上・右・下・左
+  if (r>0   && grid[idx(r-1,c)]===OPEN) out.push(idx(r-1,c));
+  if (c<W-1 && grid[idx(r,c+1)]===OPEN) out.push(idx(r,c+1));
+  if (r<H-1 && grid[idx(r+1,c)]===OPEN) out.push(idx(r+1,c));
+  if (c>0   && grid[idx(r,c-1)]===OPEN) out.push(idx(r,c-1));
+  return out;
+}
+
+// ====================================================================
+// 探索アルゴリズム（ジェネレータ）。状態配列 st を破壊的に塗りながら
+// yield する。record() が yield ごとにスナップショットを録画する。
+// ====================================================================
+function makeState() {
+  const st = new Uint8Array(W*H);
+  for (let i=0;i<st.length;i++) st[i] = grid[i]===OPEN ? OPEN : WALL;
+  return st;
+}
+
+function* dfsBfs(isBFS) {
+  const st = makeState();
+  const stats = { visited:0, frontier:0, steps:0, pathLen:null };
+  const parent = new Int32Array(W*H).fill(-1);
+  const inFrontier = new Uint8Array(W*H);
+  const visited = new Uint8Array(W*H);
+  const container = [startIdx];
+  inFrontier[startIdx] = 1;
+  st[startIdx] = FRONTIER;
+  stats.frontier = 1;
+  yield { st, stats, desc:"スタートをフロンティアに入れて探索開始", op:"開始" };
+
+  while (container.length) {
+    const node = isBFS ? container.shift() : container.pop();
+    inFrontier[node] = 0;
+    if (visited[node]) { stats.frontier = container.length; continue; }
+    visited[node] = 1; stats.visited++;
+    st[node] = CURRENT; stats.frontier = container.length;
+    const [r,c] = rc(node);
+    yield { st, stats, desc:`(${r},${c}) を取り出して訪問（${isBFS?"キュー先頭":"スタック最上段"}から）`, op:"訪問" };
+
+    if (node === goalIdx) {
+      st[node] = VISITED;
+      yield { st, stats, desc:"ゴール到達！経路を復元します", op:"到達" };
+      // 経路復元
+      const path = []; let p = node;
+      while (p !== -1) { path.push(p); p = parent[p]; }
+      path.reverse();
+      for (const cell of path) {
+        st[cell] = PATH;
+        stats.pathLen = path.length;
+        const [pr,pc] = rc(cell);
+        yield { st, stats, desc:`最短候補の経路をたどる … (${pr},${pc})`, op:"経路" };
+      }
+      yield { st, stats, desc:`探索完了。経路の長さ ${path.length} マス（訪問 ${stats.visited} マス）`, op:"完了" };
+      return;
+    }
+
+    st[node] = VISITED;
+    for (const nb of neighbors(node)) {
+      if (!visited[nb] && !inFrontier[nb]) {
+        parent[nb] = node;
+        inFrontier[nb] = 1;
+        container.push(nb);
+        st[nb] = FRONTIER;
+      }
+    }
+    stats.frontier = container.length;
+    yield { st, stats, desc:`隣接する通路をフロンティアに追加（残り候補 ${container.length}）`, op:"展開" };
+  }
+  yield { st, stats, desc:"行ける所をすべて探索しました（ゴール無し）", op:"終了" };
+}
+
+function* aStar() {
+  const st = makeState();
+  const stats = { visited:0, frontier:0, steps:0, pathLen:null };
+  const parent = new Int32Array(W*H).fill(-1);
+  const gScore = new Float64Array(W*H).fill(Infinity);
+  const inOpen = new Uint8Array(W*H);
+  const closed = new Uint8Array(W*H);
+  const [gr,gc] = rc(goalIdx);
+  const h = i => { const [r,c]=rc(i); return Math.abs(r-gr)+Math.abs(c-gc); };
+  const open = [startIdx];
+  inOpen[startIdx] = 1; gScore[startIdx] = 0;
+  st[startIdx] = FRONTIER; stats.frontier = 1;
+  yield { st, stats, desc:`スタートを open に入れる（h=ゴールまでの推定距離 ${h(startIdx)}）`, op:"開始" };
+
+  while (open.length) {
+    // f = g + h が最小のマスを選ぶ
+    let bi = 0, bf = Infinity;
+    for (let k=0;k<open.length;k++) {
+      const f = gScore[open[k]] + h(open[k]);
+      if (f < bf) { bf = f; bi = k; }
+    }
+    const node = open.splice(bi,1)[0];
+    inOpen[node] = 0; stats.frontier = open.length;
+    if (closed[node]) continue;
+    closed[node] = 1; stats.visited++;
+    st[node] = CURRENT;
+    const [r,c] = rc(node);
+    yield { st, stats, desc:`f=g+h が最小の (${r},${c}) を選択（g=${gScore[node]} + h=${h(node)} = f=${gScore[node]+h(node)}）`, op:"選択" };
+
+    if (node === goalIdx) {
+      st[node] = VISITED;
+      yield { st, stats, desc:"ゴール到達！経路を復元します", op:"到達" };
+      const path = []; let p = node;
+      while (p !== -1) { path.push(p); p = parent[p]; }
+      path.reverse();
+      for (const cellI of path) {
+        st[cellI] = PATH; stats.pathLen = path.length;
+        const [pr,pc] = rc(cellI);
+        yield { st, stats, desc:`最短経路をたどる … (${pr},${pc})`, op:"経路" };
+      }
+      yield { st, stats, desc:`探索完了。経路の長さ ${path.length} マス（訪問 ${stats.visited} マス）`, op:"完了" };
+      return;
+    }
+
+    st[node] = VISITED;
+    for (const nb of neighbors(node)) {
+      if (closed[nb]) continue;
+      const tentative = gScore[node] + 1;
+      if (tentative < gScore[nb]) {
+        parent[nb] = node;
+        gScore[nb] = tentative;
+        if (!inOpen[nb]) { inOpen[nb] = 1; open.push(nb); st[nb] = FRONTIER; }
+      }
+    }
+    stats.frontier = open.length;
+    yield { st, stats, desc:`隣接マスの g を更新し open に追加（open ${open.length} 個）`, op:"展開" };
+  }
+  yield { st, stats, desc:"open が空になりました（ゴール無し）", op:"終了" };
+}
+
+function* randomWalk() {
+  const st = makeState();
+  const stats = { visited:0, frontier:0, steps:0, pathLen:null };
+  const visitCount = new Uint16Array(W*H);
+  let node = startIdx;
+  let prev = -1;
+  const maxSteps = W*H*8;   // 暴走防止の上限
+  visitCount[node] = 1; stats.visited = 1;
+  st[node] = CURRENT;
+  yield { st, stats, desc:"スタートに立つ。ここからランダムに歩きます", op:"開始" };
+
+  while (stats.steps < maxSteps) {
+    if (node === goalIdx) {
+      yield { st, stats, desc:`ゴール到達！ ${stats.steps} 歩でたどり着きました`, op:"到達" };
+      stats.pathLen = stats.steps;
+      st[node] = PATH;
+      yield { st, stats, desc:`ランダムウォーク完了（歩数 ${stats.steps} ／ 訪問 ${stats.visited} マス）`, op:"完了" };
+      return;
+    }
+    const nbs = neighbors(node);
+    // 直前のマスはなるべく避ける（袋小路以外）。完全な乱択でも可だが見やすさ優先。
+    let choices = nbs.filter(n => n !== prev);
+    if (choices.length === 0) choices = nbs;
+    const next = choices[Math.floor(Math.random()*choices.length)];
+    st[node] = visitCount[node] > 0 ? VISITED : OPEN;
+    prev = node; node = next;
+    stats.steps++;
+    if (visitCount[node] === 0) stats.visited++;
+    visitCount[node]++;
+    st[node] = CURRENT;
+    const [r,c] = rc(node);
+    const revisit = visitCount[node] > 1 ? `（${visitCount[node]}回目）` : "";
+    yield { st, stats, desc:`ランダムに移動 → (${r},${c}) ${revisit}`, op:"移動" };
+  }
+  yield { st, stats, desc:`上限 ${maxSteps} 歩に到達。ゴールに着けませんでした（運が悪い例）`, op:"打切り" };
+}
+
+// 壁伝い法（左手法 / 右手法）。地図も座標も持たず、「今の向き」と
+// 「どちらの手を壁につけるか」だけで進む。優先順位に従って曲がれる方向を
+// 選ぶので、ループの無い迷路なら必ずゴールへ着く（ただし遠回り）。
+function* wallFollower(rightHand) {
+  const st = makeState();
+  const stats = { visited:0, frontier:0, steps:0, pathLen:null };
+  const visitCount = new Uint16Array(W*H);
+  const DIR = [[-1,0],[0,1],[1,0],[0,-1]];        // 0:北 1:東 2:南 3:西
+  const ARROW = ["北 ↑","東 →","南 ↓","西 ←"];
+  const hand = rightHand ? "右手" : "左手";
+  let node = startIdx;
+  let dir = 1;                                     // 最初は東を向く
+  const maxSteps = W*H*8;                          // ループ迷路での暴走防止
+  visitCount[node] = 1; stats.visited = 1;
+  st[node] = CURRENT;
+  yield { st, stats, desc:`スタートに立ち、${hand}を壁につけて進みます（向き：${ARROW[dir]}）`, op:"開始" };
+
+  while (stats.steps < maxSteps) {
+    if (node === goalIdx) {
+      stats.pathLen = stats.steps;
+      st[node] = PATH;
+      yield { st, stats, desc:`ゴール到達！ ${stats.steps} 歩でたどり着きました（${hand}法）`, op:"到達" };
+      yield { st, stats, desc:`壁伝い完了（歩数 ${stats.steps} ／ 訪問 ${stats.visited} マス）。最短とは限りません。`, op:"完了" };
+      return;
+    }
+    // 曲がる優先順位：右手法は「右→直進→左→後ろ」、左手法はその左右逆。
+    const order = rightHand
+      ? [(dir+1)%4, dir, (dir+3)%4, (dir+2)%4]
+      : [(dir+3)%4, dir, (dir+1)%4, (dir+2)%4];
+    const [r,c] = rc(node);
+    let moved = false;
+    for (const d of order) {
+      const nr = r+DIR[d][0], nc = c+DIR[d][1];
+      if (nr>=0 && nr<H && nc>=0 && nc<W && grid[idx(nr,nc)]===OPEN) {
+        dir = d;
+        st[node] = VISITED;
+        node = idx(nr,nc);
+        stats.steps++;
+        if (visitCount[node] === 0) stats.visited++;
+        visitCount[node]++;
+        st[node] = CURRENT;
+        const revisit = visitCount[node] > 1 ? `（${visitCount[node]}回目）` : "";
+        yield { st, stats, desc:`${hand}に沿って ${ARROW[dir]} へ → (${nr},${nc}) ${revisit}`, op:"移動" };
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) {
+      yield { st, stats, desc:"四方が壁で動けません（孤立）", op:"終了" };
+      return;
+    }
+  }
+  yield { st, stats, desc:`上限 ${maxSteps} 歩に到達。ループのある迷路では戻れないことがあります。`, op:"打切り" };
+}
+
+// ====================================================================
+// 録画
+// ====================================================================
+function record(algoKey) {
+  const gen = algoKey==="bfs"   ? dfsBfs(true)
+            : algoKey==="dfs"   ? dfsBfs(false)
+            : algoKey==="astar" ? aStar()
+            : algoKey==="wallL" ? wallFollower(false)
+            : algoKey==="wallR" ? wallFollower(true)
+            : randomWalk();
+  const out = [];
+  // 初期フレーム（地形のみ）
+  const base = makeState();
+  out.push({ st: base.slice(), stats:{visited:0,frontier:0,steps:0,pathLen:null},
+             desc:"生成された迷路です。S からスタートし G を目指します。", op:"スタート" });
+  for (const ev of gen) {
+    out.push({ st: ev.st.slice(),
+               stats: { ...ev.stats },
+               desc: ev.desc, op: ev.op });
+  }
+  return out;
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+let cell = 20;
+function layoutCanvas() {
+  const maxW = 600;
+  cell = Math.max(6, Math.floor(maxW / W));
+  cv.width = W*cell;
+  cv.height = H*cell;
+}
+
+function drawMarker(i, ch, color) {
+  const [r,c] = rc(i);
+  const x = c*cell, y = r*cell;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x+cell/2, y+cell/2, Math.max(3, cell*0.34), 0, Math.PI*2);
+  ctx.fill();
+  if (cell >= 14) {
+    ctx.fillStyle = "#06122a";
+    ctx.font = `bold ${Math.floor(cell*0.55)}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(ch, x+cell/2, y+cell/2+1);
+  }
+}
+
+function renderFrame(i) {
+  const f = frames[i];
+  if (!f) return;
+  const st = f.st;
+  for (let r=0;r<H;r++) for (let c=0;c<W;c++) {
+    ctx.fillStyle = COLOR[st[idx(r,c)]];
+    ctx.fillRect(c*cell, r*cell, cell, cell);
+  }
+  drawMarker(startIdx, "S", "#4ade80");
+  drawMarker(goalIdx, "G", "#c084fc");
+
+  $("visitedCount").textContent = f.stats.visited;
+  $("frontierCount").textContent = f.stats.frontier;
+  $("stepCount").textContent = f.stats.steps;
+  $("pathCount").textContent = f.stats.pathLen ?? "—";
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op || "—";
+
+  $("progress").value = i;
+  $("stepLabel").textContent = `${i} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = i<=0;
+  $("next").disabled = $("toEnd").disabled = i>=frames.length-1;
+}
+
+function showInfo(key) {
+  const x = INFO[key];
+  $("iStruct").textContent = x.struct;
+  $("iTime").textContent = x.time;
+  $("iSpace").textContent = x.space;
+  $("iShortest").textContent = x.shortest;
+  $("iNote").textContent = x.note;
+  $("frontierLab").textContent = key==="bfs"   ? "キューの長さ"
+                               : key==="astar" ? "open の数"
+                               : key==="dfs"   ? "スタックの長さ"
+                               : "（使わない）";
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function dims(sizeVal) {
+  // sizeVal: 行数の基準。列をやや横長に。すべて奇数化。
+  const presets = { 11:[11,11], 15:[15,21], 21:[21,31] };
+  const [h,w] = presets[sizeVal] || [15,21];
+  H = h % 2 ? h : h+1;
+  W = w % 2 ? w : w+1;
+}
+
+function newMaze() {
+  stop();
+  dims(parseInt($("size").value,10));
+  generateMaze();
+  layoutCanvas();
+  prepare();
+}
+
+function prepare() {
+  const key = $("algo").value;
+  frames = record(key);
+  cur = 0;
+  $("progress").max = frames.length-1;
+  showInfo(key);
+  renderFrame(0);
+}
+
+function goTo(i) {
+  cur = Math.max(0, Math.min(frames.length-1, i));
+  renderFrame(cur);
+  if (cur >= frames.length-1) stop();
+}
+
+function play() {
+  if (playing) { stop(); return; }
+  if (cur >= frames.length-1) cur = 0;
+  playing = true; $("play").textContent = "⏸ 一時停止";
+  tick();
+}
+function tick() {
+  if (!playing) return;
+  if (cur >= frames.length-1) { stop(); return; }
+  goTo(cur+1);
+  const speed = parseInt($("speed").value,10);
+  timer = setTimeout(tick, 520 - speed*8);
+}
+function stop() { playing=false; clearTimeout(timer); $("play").textContent = "▶ 再生"; }
+
+$("newMaze").onclick = newMaze;
+$("rerun").onclick = () => { stop(); prepare(); };
+$("algo").onchange = () => { stop(); prepare(); };
+$("size").onchange = newMaze;
+$("branch").onchange = newMaze;
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowRight") { stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key === "ArrowLeft") { stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key === " ") { play(); e.preventDefault(); }
+  else if (e.key === "n" || e.key === "N") { newMaze(); }
+});
+
+newMaze();
+</script>
+</body>
+</html>

@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ビームサーチ ビジュアライザ — LLMの文章生成を見る</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --cand:#ffd24a; --beam:#5da9ff; --pruned:#39435a; --best:#4ade80; --end:#c084fc;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  input[type=range] { accent-color:var(--accent); }
+  .rateval { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+  .layout { display:grid; grid-template-columns:1fr 330px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .beamlist { display:flex; flex-direction:column; gap:7px; }
+  .beamrow { display:flex; justify-content:space-between; gap:10px; font-size:13px;
+    background:var(--panel2); border-radius:7px; padding:7px 10px; }
+  .beamrow .seq { font-weight:600; }
+  .beamrow .p { font-family:Consolas,monospace; color:var(--accent); white-space:nowrap; }
+  .beamrow.best { outline:2px solid var(--best); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:4px; display:inline-block; flex:none; }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.55; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  .result { font-size:14px; }
+  .result b { color:var(--best); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔦 ビームサーチ ビジュアライザ</h1>
+  <span class="sub">LLMが文章を1語ずつ生成する仕組み — 確率の高い候補だけを残して探索する</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>ビーム幅 k = <span class="rateval" id="kVal">2</span></label>
+      <input type="range" id="beamW" min="1" max="4" value="2" style="width:160px">
+    </div>
+    <div class="field">
+      <label>例文モデル</label>
+      <select id="model">
+        <option value="trap">わな付き（貪欲が失敗する例）</option>
+        <option value="weather">天気の文</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="20" style="width:130px">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="760" height="450"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">ビーム幅 k を決めて、▶ または「次へ」で1語ずつ候補を広げていきましょう。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1ステップ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1ステップ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📋 今のビーム（残っている候補）</h3>
+        <div class="beamlist" id="beamList"></div>
+      </div>
+      <div class="card">
+        <h3>🏆 結果</h3>
+        <div class="result" id="resultBox" style="color:var(--muted)">探索中…</div>
+      </div>
+      <div class="card">
+        <h3>🔦 ビームサーチとは</h3>
+        <p class="note" style="margin:0">
+          LLMは次の単語を <b>確率</b> で予想する。すべての続きを試すと爆発するので、
+          各ステップで <b>上位 k 本</b>（ビーム幅）だけ残して進む。<br>
+          <b>k=1</b> は毎回1位だけ選ぶ <b>貪欲法</b>。手軽だが、最初の1位につられて
+          全体では低確率の文になることがある（＝わな）。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:var(--cand)"></i>今出した候補</span>
+          <span><i style="background:var(--beam)"></i>残したビーム</span>
+          <span><i style="background:#39435a"></i>枝刈り（捨てた）</span>
+          <span><i style="background:var(--best)"></i>最終的な最良文</span>
+          <span><i style="background:var(--end)"></i>文の終わり 。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    数値は <b>累積確率</b>（各単語の確率を掛け合わせたもの）。木の上ほど高確率。
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> ・ <kbd>Space</kbd> 再生切替
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// ====================================================================
+// おもちゃの言語モデル：直前までの並び → 次の単語の確率分布
+// キーは tokens.join(" ")。未定義なら文末扱い。
+// "trap" は、最初に確率の高い語を選ぶと全体では損をする“わな”入り。
+// ====================================================================
+const MODELS = {
+  trap: {
+    start: "",
+    table: {
+      "":        { "猫": 0.55, "犬": 0.45 },          // 貪欲は「猫」を選ぶ
+      "猫":      { "は": 0.9, "が": 0.1 },
+      "犬":      { "は": 0.9, "が": 0.1 },
+      "猫 は":   { "寝る": 0.5, "鳴く": 0.5 },         // 続きが伸びない
+      "犬 は":   { "走る": 0.95, "吠える": 0.05 },     // 続きが強い → 全体で逆転
+      "猫 は 寝る": { "。": 1.0 }, "猫 は 鳴く": { "。": 1.0 },
+      "犬 は 走る": { "。": 1.0 }, "犬 は 吠える": { "。": 1.0 },
+      "猫 が":   { "好き": 1.0 }, "犬 が": { "好き": 1.0 },
+      "猫 が 好き": { "。": 1.0 }, "犬 が 好き": { "。": 1.0 },
+    },
+  },
+  weather: {
+    start: "",
+    table: {
+      "":          { "今日": 0.6, "明日": 0.4 },
+      "今日":      { "は": 0.8, "の": 0.2 },
+      "明日":      { "は": 0.7, "の": 0.3 },
+      "今日 は":   { "晴れ": 0.5, "雨": 0.3, "曇り": 0.2 },
+      "明日 は":   { "雨": 0.5, "晴れ": 0.3, "雪": 0.2 },
+      "今日 の":   { "天気": 1.0 }, "明日 の": { "天気": 1.0 },
+      "今日 の 天気": { "は": 1.0 }, "明日 の 天気": { "は": 1.0 },
+      "今日 の 天気 は": { "晴れ": 0.6, "雨": 0.4 },
+      "明日 の 天気 は": { "雨": 0.6, "晴れ": 0.4 },
+    },
+    fallback: { "。": 1.0 },
+  },
+};
+
+let MODEL = MODELS.trap;
+let K = 2;
+let frames = [], nodes = [];   // nodes: 木のノード（描画用、フレーム間で共有）
+let cur = 0, timer = null, playing = false;
+const MAXLEN = 4;
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+function nextDist(tokens) {
+  const key = tokens.join(" ");
+  if (key in MODEL.table) return MODEL.table[key];
+  return MODEL.fallback || { "。": 1.0 };
+}
+const isEnd = tok => tok === "。";
+
+// ====================================================================
+// ビームサーチを実行し、木とフレームを録画
+// ノード: {id, parent, token, seq:[], logp, prob, depth, state}
+// state: 'cand'(候補) / 'beam'(残った) / 'pruned'(枝刈り) / 'best'(最良)
+// ====================================================================
+function build() {
+  nodes = [];
+  frames = [];
+  let nextId = 0;
+  const root = { id:nextId++, parent:-1, token:"(開始)", seq:[], logp:0, prob:1,
+                 depth:0, state:"beam" };
+  nodes.push(root);
+
+  const snap = (desc, op, activeIds) => {
+    frames.push({
+      states: nodes.map(n => n.state),
+      active: activeIds ? activeIds.slice() : [],
+      desc, op,
+      beams: beam.map(b => ({ seq: nodes[b].seq.join(""), prob: nodes[b].prob })),
+    });
+  };
+
+  let beam = [root.id];           // 現在のビーム（ノードID）
+  snap(`開始。ビーム幅 k=${K}。空の文からスタート`, "開始", [root.id]);
+
+  for (let depth=1; depth<=MAXLEN+1; depth++) {
+    // すべてのビームを展開して候補を作る
+    const cands = [];
+    let allEnded = true;
+    for (const bid of beam) {
+      const node = nodes[bid];
+      if (node.seq.length && isEnd(node.token)) {
+        // すでに文末 → そのまま候補（保持）
+        cands.push(bid);
+        continue;
+      }
+      allEnded = false;
+      const dist = nextDist(node.seq);
+      for (const tok in dist) {
+        const p = dist[tok];
+        const child = {
+          id: nextId++, parent: bid, token: tok,
+          seq: node.seq.concat([tok]),
+          logp: node.logp + Math.log(p), prob: node.prob * p,
+          depth, state: "cand",
+        };
+        nodes.push(child);
+        cands.push(child.id);
+      }
+    }
+    if (allEnded) break;
+    snap(`各ビームから次の単語の候補を展開（候補 ${cands.length} 個）`, "展開", cands);
+
+    // 上位 k を残す（累積確率＝logp で比較）
+    const sorted = cands.slice().sort((a,b) => nodes[b].logp - nodes[a].logp);
+    const keep = new Set(sorted.slice(0, K));
+    for (const cid of cands) {
+      if (nodes[cid].state === "cand") nodes[cid].state = keep.has(cid) ? "beam" : "pruned";
+    }
+    beam = sorted.slice(0, K);
+    snap(`累積確率で上位 ${K} 本だけ残し、他は枝刈り`, "選択", beam);
+
+    if (beam.every(bid => isEnd(nodes[bid].token))) break;
+  }
+
+  // 最良の文（累積確率最大）を強調
+  const best = beam.slice().sort((a,b)=>nodes[b].logp-nodes[a].logp)[0];
+  let p = best;
+  while (p !== -1) { if (nodes[p].state!=="pruned") nodes[p].state = "best"; p = nodes[p].parent; }
+  frames.push({
+    states: nodes.map(n => n.state),
+    active: [best],
+    desc: `完成：「${nodes[best].seq.join("")}」（累積確率 ${(nodes[best].prob*100).toFixed(1)}%）`,
+    op: "完了",
+    beams: beam.map(b => ({ seq: nodes[b].seq.join(""), prob: nodes[b].prob })),
+    bestSeq: nodes[best].seq.join(""), bestProb: nodes[best].prob,
+  });
+
+  // レイアウト（深さ=列、同深さで縦に整列）
+  layout();
+}
+
+let nodePos = [];
+function layout() {
+  nodePos = nodes.map(()=>null);
+  const byDepth = {};
+  nodes.forEach(n => { (byDepth[n.depth] = byDepth[n.depth] || []).push(n.id); });
+  const maxDepth = Math.max(...nodes.map(n=>n.depth));
+  const padX = 70, padY = 40;
+  const colW = (cv.width - 2*padX) / Math.max(1, maxDepth);
+  for (let d=0; d<=maxDepth; d++) {
+    const ids = byDepth[d] || [];
+    const n = ids.length;
+    const gap = (cv.height - 2*padY) / Math.max(1, n);
+    ids.forEach((id, i) => {
+      nodePos[id] = { x: padX + d*colW, y: padY + gap*(i+0.5) };
+    });
+  }
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+const STATE_COLOR = { cand:"#ffd24a", beam:"#5da9ff", pruned:"#39435a", best:"#4ade80" };
+function renderFrame(i) {
+  const f = frames[i]; if (!f) return;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 列ラベル
+  ctx.fillStyle="#5a6680"; ctx.font="12px sans-serif"; ctx.textAlign="center";
+  const maxDepth = Math.max(...nodes.map(n=>n.depth));
+  for (let d=0; d<=maxDepth; d++) {
+    const x = 70 + d*((cv.width-140)/Math.max(1,maxDepth));
+    ctx.fillText(d===0?"開始":`${d}語目`, x, 20);
+  }
+
+  // エッジ
+  for (const n of nodes) {
+    if (n.parent < 0) continue;
+    const st = f.states[n.id];
+    if (st === undefined) continue;
+    const a = nodePos[n.parent], b = nodePos[n.id];
+    if (!a || !b) continue;
+    const best = st==="best";
+    ctx.strokeStyle = best ? "#4ade80" : (st==="pruned" ? "rgba(80,95,125,0.25)" : "rgba(120,140,175,0.35)");
+    ctx.lineWidth = best ? 3 : 1.2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  // ノード
+  const activeSet = new Set(f.active);
+  for (const n of nodes) {
+    const st = f.states[n.id];
+    if (st === undefined) continue;
+    const pos = nodePos[n.id]; if (!pos) continue;
+    const isEndTok = isEnd(n.token);
+    let fill = STATE_COLOR[st] || "#38445f";
+    const r = 15;
+    // ハイライト（今アクティブ）
+    if (activeSet.has(n.id)) {
+      ctx.beginPath(); ctx.arc(pos.x, pos.y, r+5, 0, Math.PI*2);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+    }
+    // 角丸トークン箱
+    const label = n.parent<0 ? "▶" : n.token;
+    ctx.font = "bold 13px sans-serif";
+    const tw = Math.max(30, ctx.measureText(label).width + 16);
+    roundRect(pos.x - tw/2, pos.y - 14, tw, 28, 8);
+    ctx.fillStyle = st==="pruned" ? "#1d2433" : fill; ctx.fill();
+    if (isEndTok) { ctx.strokeStyle="#c084fc"; ctx.lineWidth=2; ctx.stroke(); }
+    // ラベル
+    ctx.fillStyle = (st==="beam"||st==="best"||st==="cand") ? "#06122a" : "#8a97b0";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(label, pos.x, pos.y-1);
+    // 累積確率
+    if (n.parent>=0) {
+      ctx.fillStyle = st==="pruned" ? "#54607a" : "#aeb9cf";
+      ctx.font = "10px Consolas, monospace";
+      ctx.fillText((n.prob*100).toFixed(0)+"%", pos.x, pos.y+20);
+    }
+  }
+
+  // サイド更新
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op;
+  const bl = $("beamList");
+  bl.innerHTML = "";
+  f.beams.slice().sort((a,b)=>b.prob-a.prob).forEach((b,idx) => {
+    const row = document.createElement("div");
+    row.className = "beamrow" + (f.bestSeq && b.seq===f.bestSeq ? " best" : "");
+    row.innerHTML = `<span class="seq">${b.seq || "（空）"}</span><span class="p">${(b.prob*100).toFixed(1)}%</span>`;
+    bl.appendChild(row);
+  });
+  const rb = $("resultBox");
+  if (f.bestSeq) {
+    rb.innerHTML = `最良の文：<b>「${f.bestSeq}」</b><br>累積確率 ${(f.bestProb*100).toFixed(1)}%`;
+    rb.style.color = "var(--text)";
+  } else { rb.textContent = "探索中…"; rb.style.color = "var(--muted)"; }
+
+  $("progress").value = i;
+  $("stepLabel").textContent = `${i} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = i<=0;
+  $("next").disabled = $("toEnd").disabled = i>=frames.length-1;
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+// ====================================================================
+// 制御
+// ====================================================================
+function rebuild() {
+  stop();
+  MODEL = MODELS[$("model").value];
+  K = parseInt($("beamW").value,10);
+  $("kVal").textContent = K;
+  build();
+  cur = 0;
+  $("progress").max = frames.length-1;
+  renderFrame(0);
+}
+function goTo(i){ cur=Math.max(0,Math.min(frames.length-1,i)); renderFrame(cur); if(cur>=frames.length-1) stop(); }
+function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){ if(!playing) return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
+  const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 700-sp*10); }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+$("model").onchange = rebuild;
+$("beamW").oninput = rebuild;
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>

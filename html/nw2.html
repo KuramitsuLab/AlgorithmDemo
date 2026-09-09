@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ニューラルネットワーク体験2 — 隠れ層を深くする（ディープ）</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --cls0:#2f7fd9; --cls1:#ff6b6b; --pos:#2f7fd9; --neg:#ff6b6b;
+    --fire:#4ade80; --goal:#c084fc; --grad:#ffd24a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  input[type=range] { accent-color:var(--accent); }
+  .rateval { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+  .layout { display:grid; grid-template-columns:1fr 320px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .canvas-row { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; width:100%; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; }
+  #net { cursor:default; }
+  #field { cursor:crosshair; }
+  .cap { font-size:11.5px; color:var(--muted); margin-top:4px; text-align:center; }
+  .desc { margin-top:2px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .formula { font-family:Consolas,monospace; font-size:13px; background:var(--panel2);
+    border-radius:8px; padding:10px 12px; color:var(--text); text-align:center; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:3px; display:inline-block; flex:none; }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  .status { font-weight:700; }
+  .arch { font-family:Consolas,monospace; font-size:12px; color:var(--accent);
+    text-align:center; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 ニューラルネットワーク体験2 — 深くする</h1>
+  <span class="sub">隠れ層を 1 → 2 → 3 → 4 と積み重ねると、境界がどう変わるかを見る</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>データ（分けたい模様）</label>
+      <select id="data">
+        <option value="blobs">2つの塊（直線で分けられる）</option>
+        <option value="circle">まる（内側と外側）</option>
+        <option value="moons">二日月（ふたつの弧）</option>
+        <option value="sine">サイン波（なみの境界）</option>
+        <option value="xor">市松（XOR・4象限）</option>
+        <option value="grid">チェッカー（細かい格子）</option>
+        <option value="rings">三重丸（同心の輪）</option>
+        <option value="spiral" selected>渦巻き（むずかしい）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>データ数</label>
+      <select id="npts">
+        <option value="40">40 個</option>
+        <option value="80">80 個</option>
+        <option value="120" selected>120 個</option>
+        <option value="200">200 個</option>
+        <option value="400">400 個</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>隠れ層の数</label>
+      <select id="layers">
+        <option value="1" selected>1 層</option>
+        <option value="2">2 層</option>
+        <option value="3">3 層</option>
+        <option value="4">4 層</option>
+        <option value="6">6 層</option>
+        <option value="8">8 層（深すぎ）</option>
+        <option value="12">12 層（深すぎ）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>1層あたりの数</label>
+      <select id="hidden">
+        <option value="3">3 個</option>
+        <option value="4">4 個</option>
+        <option value="6">6 個</option>
+        <option value="8" selected>8 個</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>活性化関数</label>
+      <select id="act">
+        <option value="tanh" selected>tanh（なめらか）</option>
+        <option value="relu">ReLU（折れ線）</option>
+        <option value="sigmoid">sigmoid</option>
+        <option value="linear">恒等（線形・非線形なし）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>最適化手法</label>
+      <select id="opt">
+        <option value="sgd">SGD（素の勾配降下）</option>
+        <option value="mom" selected>モメンタム</option>
+        <option value="adam">Adam</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>学習率 η = <span class="rateval" id="rateVal">0.30</span></label>
+      <input type="range" id="rate" min="5" max="200" value="30" style="width:150px">
+    </div>
+    <div class="field">
+      <label>エポック数</label>
+      <select id="epochs">
+        <option value="200">200</option>
+        <option value="400">400</option>
+        <option value="800" selected>800</option>
+        <option value="1600">1600</option>
+        <option value="3000">3000</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="40" style="width:110px">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <div class="arch" id="archLine">2 → 8 → 1　｜　パラメータ 33（重み 24＋バイアス 9）</div>
+        <div class="canvas-row">
+          <div>
+            <canvas id="net" width="540" height="380"></canvas>
+            <div class="cap">ネットワークの中身（線＝重み <span style="color:var(--pos)">青＋</span>/<span style="color:var(--neg)">赤−</span>・太さ＝大きさ）</div>
+          </div>
+          <div>
+            <canvas id="field" width="300" height="300"></canvas>
+            <div class="cap">入力空間と分類境界（点＝データ／背景＝ネットの判断）</div>
+          </div>
+        </div>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">▶ 再生で学習が進みます。隠れ層を増やすと、渦巻きのような複雑な模様も少しずつ分けられます。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1つ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1つ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📊 学習の状態</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="epNum">0</div><div class="lab">エポック</div></div>
+          <div class="stat"><div class="num" id="accNum">—</div><div class="lab">正解率</div></div>
+          <div class="stat"><div class="num" id="lossNum">—</div><div class="lab">損失（誤差）</div></div>
+          <div class="stat"><div class="num" id="probeNum">—</div><div class="lab">マウス地点の出力</div></div>
+        </div>
+        <div style="margin-top:10px;text-align:center" class="status" id="statusLine">　</div>
+      </div>
+      <div class="card">
+        <h3>📉 損失と正解率の推移</h3>
+        <canvas id="chart" width="288" height="150" style="width:100%"></canvas>
+        <div class="legend" style="margin-top:8px;grid-template-columns:1fr 1fr">
+          <span><i style="background:var(--grad)"></i>損失（小さいほど良い）</span>
+          <span><i style="background:var(--fire)"></i>正解率（高いほど良い）</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>⚙️ 最適化手法</h3>
+        <p class="note" style="margin:0">
+          <b>SGD</b>：勾配の向きに素直に一歩ずつ（遅い）。<br>
+          <b>モメンタム</b>：慣性で加速し、谷で振動しにくい（速い）。<br>
+          <b>Adam</b>：重みごとに歩幅を自動調整（速く安定・むずかしいデータに強い。ηは自動で小さめに）。<br>
+          同じデータで切り替えて、上の「損失の推移」で収束の速さを見比べよう。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🏗️ 層を深くすると？</h3>
+        <p class="note" style="margin:0">
+          1層は「単純な曲線」までしか引けない。層を重ねるほど
+          <b>前の層の特徴を組み合わせて</b>、より複雑な境界を作れる（＝表現力が上がる）。<br>
+          ただし<b>深いほど学習は難しく</b>なる（勾配が薄れる＝勾配消失）。
+          うまく学習しない時は <kbd>R</kbd> で初期値を変えたり、学習率を下げてみよう。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🧮 何をしている？</h3>
+        <div class="formula">a⁽ˡ⁾ = f( W⁽ˡ⁾·a⁽ˡ⁻¹⁾ + b⁽ˡ⁾ )</div>
+        <p class="note" style="margin:10px 0 0">
+          入力 x を層ごとに変換し、最後に σ で 0〜1 の確率に。
+          誤差を<b>後ろの層から順に逆伝播</b>して全部の重みを直す。
+        </p>
+      </div>
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:var(--cls0)"></i>クラスA / 青の領域</span>
+          <span><i style="background:var(--cls1)"></i>クラスB / 赤の領域</span>
+          <span><i style="background:var(--pos)"></i>重み ＋（強める）</span>
+          <span><i style="background:var(--neg)"></i>重み −（弱める）</span>
+          <span><i style="background:var(--fire)"></i>ニューロン発火</span>
+          <span><i style="background:var(--goal)"></i>マウス地点</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1ステップ ・ <kbd>Space</kbd> 再生切替 ・ <kbd>R</kbd> 初期値を変えて再学習 ／
+    層数・ニューロン数・活性化・学習率を変えると最初から学習し直します。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// ====================================================================
+// 乱数（シード固定・再現性のため）
+// ====================================================================
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15, 1|a); t=t+Math.imul(t^t>>>7, 61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }; }
+function makeGauss(rng){ return ()=>{ let u=0,v=0; while(u===0)u=rng(); while(v===0)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }; }
+
+// ====================================================================
+// 活性化関数
+// ====================================================================
+const ACTS = {
+  tanh:    { f:z=>Math.tanh(z),       df:(z,a)=>1-a*a,   he:false },
+  relu:    { f:z=>z>0?z:0,            df:(z,a)=>z>0?1:0, he:true  },
+  sigmoid: { f:z=>1/(1+Math.exp(-z)), df:(z,a)=>a*(1-a), he:false },
+  linear:  { f:z=>z,                  df:(z,a)=>1,       he:false },  // 恒等関数（非線形なし＝層を重ねても直線）
+};
+const sig = z => 1/(1+Math.exp(-Math.max(-30,Math.min(30,z))));
+
+// ====================================================================
+// データ生成（すべて x,y ∈ [-1,1]、label ∈ {0,1}）
+// ====================================================================
+function genData(name, seed){
+  const rng = mulberry32(seed*7919+13);
+  const gauss = makeGauss(rng);
+  const pts = [];
+  const N = NPTS;
+  if (name==="circle"){
+    for (let i=0;i<N;i++){
+      const r = Math.sqrt(rng())* (rng()<0.5?0.5:1);
+      const t = rng()*2*Math.PI;
+      const x=r*Math.cos(t)*0.95, y=r*Math.sin(t)*0.95;
+      pts.push({x,y,label: (x*x+y*y)<0.28?1:0});
+    }
+  } else if (name==="xor"){
+    for (let i=0;i<N;i++){
+      const x=(rng()*2-1)*0.92, y=(rng()*2-1)*0.92;
+      pts.push({x,y,label:(x*y>0)?1:0});
+    }
+  } else if (name==="blobs"){
+    for (let i=0;i<N;i++){
+      const c = i<N/2?0:1;
+      const cx = c?0.45:-0.45, cy = c?0.45:-0.45;
+      pts.push({x:Math.max(-1,Math.min(1,cx+gauss()*0.22)),
+                y:Math.max(-1,Math.min(1,cy+gauss()*0.22)), label:c});
+    }
+  } else if (name==="moons"){
+    const n=N/2, raw=[];
+    for (let i=0;i<n;i++){ const t=Math.PI*i/(n-1);
+      raw.push([Math.cos(t)+gauss()*0.06, Math.sin(t)+gauss()*0.06, 0]); }
+    for (let i=0;i<n;i++){ const t=Math.PI*i/(n-1);
+      raw.push([1-Math.cos(t)+gauss()*0.06, 0.35-Math.sin(t)+gauss()*0.06, 1]); }
+    let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
+    for (const p of raw){ mnx=Math.min(mnx,p[0]);mxx=Math.max(mxx,p[0]);mny=Math.min(mny,p[1]);mxy=Math.max(mxy,p[1]); }
+    const cx=(mnx+mxx)/2, cy=(mny+mxy)/2, sc=0.9/Math.max((mxx-mnx)/2,(mxy-mny)/2);
+    for (const p of raw) pts.push({x:(p[0]-cx)*sc, y:(p[1]-cy)*sc, label:p[2]});
+  } else if (name==="sine"){
+    for (let i=0;i<N;i++){ const x=(rng()*2-1)*0.92, y=(rng()*2-1)*0.92;
+      pts.push({x,y,label: y>0.5*Math.sin(3.2*x)?1:0}); }
+  } else if (name==="rings"){
+    for (let i=0;i<N;i++){ const r=Math.sqrt(rng())*0.96, t=rng()*2*Math.PI;
+      pts.push({x:r*Math.cos(t), y:r*Math.sin(t), label:Math.floor(r/0.32)%2}); }
+  } else if (name==="grid"){
+    const k=1.5;
+    for (let i=0;i<N;i++){ const x=(rng()*2-1)*0.92, y=(rng()*2-1)*0.92;
+      pts.push({x,y,label:(Math.floor((x+1)*k)+Math.floor((y+1)*k))%2}); }
+  } else { // spiral
+    const n=N/2;
+    for (let c=0;c<2;c++){
+      for (let i=0;i<n;i++){
+        const r = i/n*0.92;
+        const t = 1.75*i/n*2*Math.PI + c*Math.PI + gauss()*0.12;
+        pts.push({x:r*Math.cos(t), y:r*Math.sin(t), label:c});
+      }
+    }
+  }
+  return pts;
+}
+
+// ====================================================================
+// 多層ネットワーク：入力2 →（隠れ act）×L → 出力1（sigmoid）
+//   sizes 例: [2, 8, 8, 1]  /  W[l] は [出][入] 行列、b[l] は [出]
+// ====================================================================
+function initNet(sizes, seed, he){
+  const rng = mulberry32(seed*104729+7);
+  const g = makeGauss(rng);
+  const W=[], b=[];
+  for (let l=0;l<sizes.length-1;l++){
+    const fin=sizes[l], fout=sizes[l+1];
+    const s=(he?Math.sqrt(2):1)/Math.sqrt(fin);       // ReLU=He / それ以外=Xavier
+    const m=[];
+    for (let i=0;i<fout;i++){ const row=[]; for (let j=0;j<fin;j++) row.push(g()*s); m.push(row); }
+    W.push(m); b.push(new Array(fout).fill(0));
+  }
+  return {sizes:sizes.slice(), W, b};
+}
+function cloneNet(n){
+  return { sizes:n.sizes.slice(), W:n.W.map(m=>m.map(r=>r.slice())), b:n.b.map(r=>r.slice()) };
+}
+// 順伝播：全層の活性 acts（acts[0]=入力 … acts[M]=出力）と z を返す
+function forward(net, x, y, act){
+  const acts=[[x,y]], zs=[]; const M=net.W.length;
+  for (let l=0;l<M;l++){
+    const fout=net.W[l].length, z=new Array(fout), a=new Array(fout), prev=acts[l];
+    for (let i=0;i<fout;i++){
+      let s=net.b[l][i]; const row=net.W[l][i];
+      for (let j=0;j<row.length;j++) s+=row[j]*prev[j];
+      z[i]=s; a[i]=(l===M-1)?sig(s):act.f(s);
+    }
+    zs.push(z); acts.push(a);
+  }
+  return {acts, zs, out:acts[M][0]};
+}
+
+// ====================================================================
+// 学習を回してフレーム録画（エポックを間引いて記録）
+// ====================================================================
+let DATA=[], frames=[], EPOCHS=800, epochOf=[];
+let curNet=null, ACT=ACTS.tanh, HID=8, NLAYERS=1, eta=0.3, OPT="mom", NPTS=120;
+let dataSeed=1, initSeed=1;
+
+function sizesArr(){ const s=[2]; for(let l=0;l<NLAYERS;l++) s.push(HID); s.push(1); return s; }
+
+function evalNet(net){
+  let loss=0, correct=0;
+  for (const p of DATA){
+    const {out} = forward(net,p.x,p.y,ACT);
+    const q = Math.max(1e-7, Math.min(1-1e-7, out));
+    loss += -(p.label*Math.log(q)+(1-p.label)*Math.log(1-q));
+    if ((out>0.5?1:0)===p.label) correct++;
+  }
+  return {loss:loss/DATA.length, acc:correct/DATA.length};
+}
+
+function build(){
+  frames=[]; epochOf=[];
+  const sizes=sizesArr();
+  let net=initNet(sizes, initSeed, ACT.he);
+  const M=net.W.length;
+  // 最適化手法の状態（モメンタム=1次、Adam=1次+2次モーメント）
+  const m1={W:net.W.map(m=>m.map(r=>r.map(()=>0))), b:net.b.map(r=>r.map(()=>0))};
+  const m2={W:net.W.map(m=>m.map(r=>r.map(()=>0))), b:net.b.map(r=>r.map(()=>0))};
+  const mom=0.9, beta1=0.9, beta2=0.999, epsA=1e-8;
+  const elr = eta * (OPT==="adam"?0.1:1);            // Adam は実効ηを小さめに
+  let tstep=0;
+  // 1パラメータ更新（オブジェクト+キーで in-place 更新）
+  const step=(p,pk, a,ak, b,bk, g)=>{
+    if (OPT==="sgd"){ p[pk]-=elr*g; }
+    else if (OPT==="mom"){ a[ak]=mom*a[ak]-elr*g; p[pk]+=a[ak]; }
+    else { a[ak]=beta1*a[ak]+(1-beta1)*g; b[bk]=beta2*b[bk]+(1-beta2)*g*g;
+      const mh=a[ak]/(1-Math.pow(beta1,tstep)), sh=b[bk]/(1-Math.pow(beta2,tstep));
+      p[pk]-=elr*mh/(Math.sqrt(sh)+epsA); }
+  };
+  const stride=Math.max(1, Math.round(EPOCHS/240));   // フレームは約240枚に間引く
+  const rec = ep => { const e=evalNet(net); frames.push({net:cloneNet(net), loss:e.loss, acc:e.acc}); epochOf.push(ep); };
+  rec(0);
+  for (let ep=1; ep<=EPOCHS; ep++){
+    // フルバッチ勾配
+    const gW=net.W.map(m=>m.map(r=>r.map(()=>0))), gb=net.b.map(r=>r.map(()=>0));
+    for (const p of DATA){
+      const {acts,zs,out}=forward(net,p.x,p.y,ACT);
+      let delta=[out - p.label];               // BCE + sigmoid（出力層）
+      for (let l=M-1;l>=0;l--){
+        const prev=acts[l];
+        for (let i=0;i<delta.length;i++){
+          gb[l][i]+=delta[i];
+          const row=gW[l][i];
+          for (let j=0;j<prev.length;j++) row[j]+=delta[i]*prev[j];
+        }
+        if (l>0){                              // 前層へ逆伝播
+          const da=new Array(prev.length).fill(0);
+          for (let i=0;i<delta.length;i++){
+            const row=net.W[l][i];
+            for (let j=0;j<prev.length;j++) da[j]+=row[j]*delta[i];
+          }
+          const nd=new Array(prev.length);
+          for (let j=0;j<prev.length;j++) nd[j]=da[j]*ACT.df(zs[l-1][j], acts[l][j]);
+          delta=nd;
+        }
+      }
+    }
+    const n=DATA.length; tstep++;
+    for (let l=0;l<M;l++){
+      for (let i=0;i<net.W[l].length;i++){
+        for (let j=0;j<net.W[l][i].length;j++)
+          step(net.W[l][i],j, m1.W[l][i],j, m2.W[l][i],j, gW[l][i][j]/n);
+        step(net.b[l],i, m1.b[l],i, m2.b[l],i, gb[l][i]/n);
+      }
+    }
+    if (ep%stride===0 || ep===EPOCHS) rec(ep);
+  }
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+const $ = id => document.getElementById(id);
+const fcv=$("field"), fx=fcv.getContext("2d");
+const ncv=$("net"), nx=ncv.getContext("2d");
+const ccv=$("chart"), cx=ccv.getContext("2d");
+const RES=64;                          // 境界ヒートマップ解像度
+const small=document.createElement("canvas"); small.width=RES; small.height=RES;
+const sctx=small.getContext("2d");
+const bg=document.createElement("canvas"); bg.width=fcv.width; bg.height=fcv.height;
+const bgx=bg.getContext("2d");
+let cur=0, timer=null, playing=false, probe=null;
+
+// データ座標[-1,1] → キャンバス
+const DX = x => (x+1)/2 * fcv.width;
+const DY = y => (1-(y+1)/2) * fcv.height;
+const invX = px => px/fcv.width*2-1;
+const invY = py => (1-py/fcv.height)*2-1;
+
+function lerp(a,b,t){ return a+(b-a)*t; }
+function mix(c0,c1,t){ return [Math.round(lerp(c0[0],c1[0],t)),
+  Math.round(lerp(c0[1],c1[1],t)), Math.round(lerp(c0[2],c1[2],t))]; }
+const C_BLUE=[47,127,217], C_RED=[255,107,107], C_WHITE=[247,249,252];
+
+// 境界ヒートマップを bg にキャッシュ
+function renderBoundary(net){
+  const img=sctx.createImageData(RES,RES);
+  for (let j=0;j<RES;j++){
+    for (let i=0;i<RES;i++){
+      const x=i/(RES-1)*2-1, y=(1-j/(RES-1))*2-1;
+      const {out}=forward(net,x,y,ACT);
+      const t=Math.abs(out-0.5)*2;
+      const col = out<0.5 ? mix(C_WHITE,C_BLUE,t*0.85) : mix(C_WHITE,C_RED,t*0.85);
+      const k=(j*RES+i)*4;
+      img.data[k]=col[0]; img.data[k+1]=col[1]; img.data[k+2]=col[2]; img.data[k+3]=255;
+    }
+  }
+  sctx.putImageData(img,0,0);
+  bgx.imageSmoothingEnabled=true;
+  bgx.drawImage(small,0,0,RES,RES,0,0,bg.width,bg.height);
+}
+
+function drawField(){
+  fx.clearRect(0,0,fcv.width,fcv.height);
+  fx.drawImage(bg,0,0);
+  for (const p of DATA){
+    fx.beginPath(); fx.arc(DX(p.x),DY(p.y),5,0,Math.PI*2);
+    fx.fillStyle = p.label? "#ff6b6b":"#2f7fd9";
+    fx.fill(); fx.lineWidth=1.5; fx.strokeStyle="#fff"; fx.stroke();
+  }
+  if (probe){
+    fx.beginPath(); fx.arc(DX(probe.x),DY(probe.y),8,0,Math.PI*2);
+    fx.strokeStyle="#c084fc"; fx.lineWidth=2.5; fx.stroke();
+    fx.beginPath(); fx.arc(DX(probe.x),DY(probe.y),2.5,0,Math.PI*2);
+    fx.fillStyle="#c084fc"; fx.fill();
+  }
+}
+
+// ネットワーク図（任意の層数に対応）
+function drawNet(net){
+  const W=ncv.width, Hh=ncv.height;
+  nx.clearRect(0,0,W,Hh);
+  const sizes=net.sizes, C=sizes.length;   // 列数（入力＋隠れ×L＋出力）
+  const colX = k => 46 + k*(W-92)/(C-1);
+  const yPos = (count) => { const arr=[]; const mid=Hh/2;
+    const r=Math.min(140, 26+count*13);
+    for (let k=0;k<count;k++) arr.push(count===1?mid: mid-r + k*(2*r/(count-1)));
+    return arr; };
+  const pos = sizes.map((cnt,c)=> yPos(cnt).map(y=>[colX(c),y]));
+  const rad = sizes.map(cnt=> Math.max(7, Math.min(17, 20-cnt*1.0)) );
+
+  // 順伝播（probe があれば信号）
+  let acts=null, out=null;
+  if (probe){ const f=forward(net,probe.x,probe.y,ACT); acts=f.acts; out=f.out; }
+
+  // エッジ：層 l と l+1 の間
+  for (let l=0;l<net.W.length;l++){
+    for (let i=0;i<net.W[l].length;i++){       // 次層ノード i
+      for (let j=0;j<net.W[l][i].length;j++){  // 前層ノード j
+        const w=net.W[l][i][j];
+        const p0=pos[l][j], p1=pos[l+1][i];
+        const mag=Math.min(5.5, Math.abs(w)*2.2);
+        nx.beginPath(); nx.moveTo(p0[0],p0[1]); nx.lineTo(p1[0],p1[1]);
+        nx.lineWidth=0.4+mag;
+        if (probe){
+          const s=Math.min(1, Math.abs(w*acts[l][j]));
+          nx.strokeStyle = w>=0 ? `rgba(47,127,217,${0.18+0.62*s})` : `rgba(255,107,107,${0.18+0.62*s})`;
+        } else {
+          nx.strokeStyle = w>=0 ? "rgba(47,127,217,0.42)" : "rgba(255,107,107,0.42)";
+        }
+        nx.stroke();
+      }
+    }
+  }
+  // ノード
+  const fire=(v)=>{ const s=Math.min(1, Math.abs(v)); return `rgba(74,222,128,${0.12+0.8*s})`; };
+  for (let c=0;c<C;c++){
+    for (let k=0;k<pos[c].length;k++){
+      const p=pos[c][k], r=rad[c];
+      let fill="#eef1f7";
+      if (probe) fill = (c===C-1)
+        ? (()=>{ const col=out<0.5?mix(C_WHITE,C_BLUE,Math.abs(out-0.5)*2*0.85):mix(C_WHITE,C_RED,Math.abs(out-0.5)*2*0.85);
+                 return `rgb(${col[0]},${col[1]},${col[2]})`; })()
+        : fire(acts[c][k]);
+      nx.beginPath(); nx.arc(p[0],p[1],r,0,Math.PI*2);
+      nx.fillStyle=fill; nx.fill(); nx.lineWidth=1.5; nx.strokeStyle="#d6dce8"; nx.stroke();
+      // 入力・出力にはラベル
+      if (c===0){ nx.fillStyle="#1a2030"; nx.font="bold 12px sans-serif"; nx.textAlign="center"; nx.textBaseline="middle";
+        nx.fillText(k===0?"x":"y", p[0], p[1]); }
+      if (c===C-1){ nx.fillStyle="#1a2030"; nx.font="bold 11px sans-serif"; nx.textAlign="center"; nx.textBaseline="middle";
+        nx.fillText(probe?out.toFixed(2):"σ", p[0], p[1]); }
+    }
+  }
+  // 列ラベル
+  nx.fillStyle="#5d6b82"; nx.font="11px sans-serif"; nx.textAlign="center"; nx.textBaseline="alphabetic";
+  nx.fillText("入力", colX(0), 14);
+  for (let c=1;c<C-1;c++) nx.fillText("隠れ"+c, colX(c), 14);
+  nx.fillText("判断", colX(C-1), 14);
+}
+
+// 損失・正解率チャート
+function drawChart(upto){
+  cx.clearRect(0,0,ccv.width,ccv.height);
+  const w=ccv.width,h=ccv.height,p=14;
+  const maxL=Math.max(...frames.map(f=>f.loss),1e-6);
+  const X=i=>p+i/Math.max(1,frames.length-1)*(w-2*p);
+  const YL=v=>h-p-(v/maxL)*(h-2*p);
+  const YA=v=>h-p-v*(h-2*p);
+  cx.strokeStyle="rgba(120,140,175,0.2)"; cx.beginPath();
+  cx.moveTo(p,h-p); cx.lineTo(w-p,h-p); cx.stroke();
+  cx.strokeStyle="#4ade80"; cx.lineWidth=2; cx.beginPath();
+  frames.forEach((f,i)=>{ if(i>upto)return; const xx=X(i),yy=YA(f.acc); i===0?cx.moveTo(xx,yy):cx.lineTo(xx,yy); }); cx.stroke();
+  cx.strokeStyle="#ffd24a"; cx.lineWidth=2; cx.beginPath();
+  frames.forEach((f,i)=>{ if(i>upto)return; const xx=X(i),yy=YL(f.loss); i===0?cx.moveTo(xx,yy):cx.lineTo(xx,yy); }); cx.stroke();
+  cx.fillStyle="#ff6b6b"; cx.beginPath(); cx.arc(X(upto),YL(frames[upto].loss),3.5,0,Math.PI*2); cx.fill();
+  cx.fillStyle="#5a6680"; cx.font="10px sans-serif"; cx.textAlign="right"; cx.fillText("エポック→",w-p,h-2);
+}
+
+// ====================================================================
+// フレーム描画
+// ====================================================================
+function renderFrame(i){
+  const f=frames[i]; if(!f) return;
+  curNet=f.net;
+  renderBoundary(curNet);
+  drawField();
+  drawNet(curNet);
+  drawChart(i);
+  $("epNum").textContent=epochOf[i];
+  $("accNum").textContent=(f.acc*100).toFixed(0)+"%";
+  $("lossNum").textContent=f.loss.toFixed(3);
+  updateProbeStat();
+  const badge=$("opbadge"), sl=$("statusLine");
+  if (i===0){ badge.textContent="初期状態"; sl.textContent="🎲 ランダムな重み"; sl.style.color="#8a97b0";
+    $("descText").textContent="まだ何も学習していない状態。境界はでたらめです。▶ 再生で学習を始めましょう。"; }
+  else if (i>=frames.length-1){ badge.textContent="学習終了";
+    if(f.acc>0.97){ sl.textContent="✅ ほぼ完璧に分類"; sl.style.color="#4ade80"; }
+    else if(f.acc>0.82){ sl.textContent="🙂 だいたい分類できた"; sl.style.color="#4ade80"; }
+    else { sl.textContent="🤔 うまく学習できず（層が深い/学習率を調整・R で再挑戦）"; sl.style.color="#c084fc"; }
+    $("descText").textContent=`最終エポック。正解率 ${(f.acc*100).toFixed(0)}%。層の数を変えて境界の複雑さの違いを見比べよう。`; }
+  else { badge.textContent="学習中"; sl.textContent="🏃 重みを更新中…"; sl.style.color="#8a97b0";
+    $("descText").textContent=`エポック ${epochOf[i]}：誤差を逆伝播して全層の重みを直しました（損失 ${f.loss.toFixed(3)}）。`; }
+  $("progress").value=i;
+  $("stepLabel").textContent=`${i} / ${frames.length-1}`;
+  $("prev").disabled=$("toStart").disabled=i<=0;
+  $("next").disabled=$("toEnd").disabled=i>=frames.length-1;
+}
+
+function updateProbeStat(){
+  if (probe && curNet){ const {out}=forward(curNet,probe.x,probe.y,ACT);
+    $("probeNum").textContent=out.toFixed(2);
+  } else $("probeNum").textContent="—";
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function rebuild(){
+  stop();
+  NLAYERS=parseInt($("layers").value,10);
+  HID=parseInt($("hidden").value,10);
+  NPTS=parseInt($("npts").value,10);
+  EPOCHS=parseInt($("epochs").value,10);
+  ACT=ACTS[$("act").value];
+  OPT=$("opt").value;
+  eta=parseInt($("rate").value,10)/100;
+  const elr=eta*(OPT==="adam"?0.1:1);
+  $("rateVal").textContent=elr.toFixed(OPT==="adam"?3:2);
+  const sz=sizesArr();
+  let nW=0, nB=0;
+  for (let l=0;l<sz.length-1;l++){ nW+=sz[l]*sz[l+1]; nB+=sz[l+1]; }
+  $("archLine").textContent=`${sz.join(" → ")}　｜　パラメータ ${nW+nB}（重み ${nW}＋バイアス ${nB}）`;
+  DATA=genData($("data").value, dataSeed);
+  build();
+  cur=0;
+  $("progress").max=frames.length-1;
+  renderFrame(0);
+}
+function regenerate(){ initSeed++; dataSeed++; rebuild(); }
+function goTo(i){ cur=Math.max(0,Math.min(frames.length-1,i)); renderFrame(cur); if(cur>=frames.length-1) stop(); }
+function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){ if(!playing)return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
+  const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 300-sp*4.6); }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+$("data").onchange=rebuild;
+$("npts").onchange=rebuild;
+$("layers").onchange=rebuild;
+$("hidden").onchange=rebuild;
+$("act").onchange=rebuild;
+$("opt").onchange=rebuild;
+$("rate").oninput=rebuild;
+$("epochs").onchange=rebuild;
+$("play").onclick=play;
+$("next").onclick=()=>{ stop(); goTo(cur+1); };
+$("prev").onclick=()=>{ stop(); goTo(cur-1); };
+$("toStart").onclick=()=>{ stop(); goTo(0); };
+$("toEnd").onclick=()=>{ stop(); goTo(frames.length-1); };
+$("progress").oninput=e=>{ stop(); goTo(parseInt(e.target.value,10)); };
+
+fcv.addEventListener("mousemove", e=>{
+  const r=fcv.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*fcv.width/r.width;
+  const my=(e.clientY-r.top)*fcv.height/r.height;
+  probe={x:invX(mx), y:invY(my)};
+  drawField(); drawNet(curNet); updateProbeStat();
+});
+fcv.addEventListener("mouseleave", ()=>{ probe=null; drawField(); drawNet(curNet); updateProbeStat(); });
+
+document.addEventListener("keydown", e=>{
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+  else if (e.key==="r"||e.key==="R"){ regenerate(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>
