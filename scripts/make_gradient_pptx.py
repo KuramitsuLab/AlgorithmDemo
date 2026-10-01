@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """勾配降下法の教材スライド (gradient.pptx) を生成する。
-html/gradient.html と対になる講義用スライド。
+docs/gradient.html と対になる講義用スライド。
 実際に反復を回した軌跡（ボールの動き）と損失推移を作図する。
 """
 import math
@@ -115,7 +115,7 @@ draw_func(s, Inches(7.6),Inches(2.2),Inches(5.0),Inches(3.0), bowl,bowl_d,-5,5, 
 add_text(s,Inches(0.7),Inches(2.0),Inches(7),Inches(1.0),"勾配降下法",size=50,bold=True)
 add_text(s,Inches(0.7),Inches(3.15),Inches(7),Inches(0.6),"AI が「学習する」仕組みの心臓",size=22,color=ACCENT)
 add_text(s,Inches(0.7),Inches(3.95),Inches(7),Inches(0.5),"誤差の坂を下って、いちばん低い谷を探す",size=16,color=MUTED)
-add_text(s,Inches(0.7),Inches(6.7),Inches(7),Inches(0.4),"対応ビジュアライザ:  html/gradient.html",size=13,color=MUTED,font=MONO)
+add_text(s,Inches(0.7),Inches(6.7),Inches(7),Inches(0.4),"対応ビジュアライザ:  docs/gradient.html",size=13,color=MUTED,font=MONO)
 
 # ====================================================================
 # 2. 学習＝誤差の最小化
@@ -248,7 +248,7 @@ add_text(s,Inches(7.05),Inches(2.2),Inches(5.5),Inches(2.3),
 add_rect(s,Inches(0.5),Inches(4.9),Inches(12.3),Inches(1.5),PANEL2,line=ACCENT,radius=True)
 add_text(s,Inches(0.8),Inches(5.05),Inches(11.7),Inches(0.5),"▶ 付属ビジュアライザで体験",size=18,bold=True,color=ACCENT)
 add_text(s,Inches(0.8),Inches(5.55),Inches(11.7),Inches(0.8),
-         "html/gradient.html を開く → 関数・学習率・スタートを設定 → 「次へ」で1ステップずつ降下 / "
+         "docs/gradient.html を開く → 関数・学習率・スタートを設定 → 「次へ」で1ステップずつ降下 / "
          "損失グラフが下がる様子と発散をその場で確認",size=14,color=TEXT,font=MONO,ls=1.2)
 add_text(s,Inches(0.5),Inches(6.95),Inches(12.3),Inches(0.4),
          "この一歩の積み重ねが、巨大な AI モデルの学習を支えている。",size=14,color=MUTED,align=PP_ALIGN.CENTER)

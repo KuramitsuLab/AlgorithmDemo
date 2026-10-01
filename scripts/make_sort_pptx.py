@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ソートアルゴリズム教材スライド (sort.pptx) を生成する。
-html/sort.html のビジュアライザと対になる講義用スライド。
+docs/sort.html のビジュアライザと対になる講義用スライド。
 """
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
@@ -8,7 +8,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
-# ---- カラーパレット (html/sort.html と統一) ----
+# ---- カラーパレット (docs/sort.html と統一) ----
 BG     = RGBColor(0xF4, 0xF6, 0xFB)
 PANEL  = RGBColor(0xFF, 0xFF, 0xFF)
 PANEL2 = RGBColor(0xEE, 0xF1, 0xF7)
@@ -146,7 +146,7 @@ add_text(s, Inches(0.8), Inches(2.6), Inches(11.7), Inches(0.6),
 add_text(s, Inches(0.8), Inches(3.4), Inches(11.7), Inches(0.5),
          "比較 ・ 交換 ・ 計算量 を体感する教材", size=16, color=MUTED, align=PP_ALIGN.CENTER)
 add_text(s, Inches(0.8), Inches(6.9), Inches(11.7), Inches(0.4),
-         "対応ビジュアライザ:  html/sort.html", size=13, color=MUTED, align=PP_ALIGN.CENTER, font=MONO)
+         "対応ビジュアライザ:  docs/sort.html", size=13, color=MUTED, align=PP_ALIGN.CENTER, font=MONO)
 
 # ====================================================================
 # 2. ソートとは / 学習の流れ
@@ -388,7 +388,7 @@ add_rect(s, Inches(0.5), Inches(4.9), Inches(12.3), Inches(1.5), PANEL2, line=AC
 add_text(s, Inches(0.8), Inches(5.05), Inches(11.7), Inches(0.5),
          "▶ 付属ビジュアライザで体験", size=18, bold=True, color=ACCENT)
 add_text(s, Inches(0.8), Inches(5.55), Inches(11.7), Inches(0.8),
-         "html/sort.html をブラウザで開く  →  🎲ランダム生成 →  「次へ」で1ステップずつ /  ◀戻る で逆再生 /  計算量カウントをリアルタイム表示",
+         "docs/sort.html をブラウザで開く  →  🎲ランダム生成 →  「次へ」で1ステップずつ /  ◀戻る で逆再生 /  計算量カウントをリアルタイム表示",
          size=14, color=TEXT, font=MONO, line_spacing=1.2)
 add_text(s, Inches(0.5), Inches(6.95), Inches(12.3), Inches(0.4),
          "おしまい — 自分の手で動かすのがいちばんの近道！", size=14, color=MUTED, align=PP_ALIGN.CENTER)

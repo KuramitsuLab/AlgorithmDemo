@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """迷路探索の教材スライド (maze.pptx) を生成する。
-html/maze.html と対になる講義用スライド。
+docs/maze.html と対になる講義用スライド。
 実際に迷路を生成して DFS / BFS / A* / ランダムウォークを走らせ、
 その探索結果（訪問マス・経路）を図として描く。
 """
@@ -12,7 +12,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
-# ---- カラーパレット (html/maze.html と統一) ----
+# ---- カラーパレット (docs/maze.html と統一) ----
 BG     = RGBColor(0xF4, 0xF6, 0xFB)
 PANEL  = RGBColor(0xFF, 0xFF, 0xFF)
 PANEL2 = RGBColor(0xEE, 0xF1, 0xF7)
@@ -138,7 +138,7 @@ def run_random(grid, seed):
 
 def run_wall(grid, right_hand):
     """壁伝い法（右手法/左手法）。地図も座標も持たず、向きと『どちらの手を
-    壁につけるか』だけで進む。html/maze.html の wallFollower と同じ規則。"""
+    壁につけるか』だけで進む。docs/maze.html の wallFollower と同じ規則。"""
     DIR = [(-1, 0), (0, 1), (1, 0), (0, -1)]     # 0:北 1:東 2:南 3:西
     node = START_RC; d = 1                        # 最初は東を向く
     visited = {node}; steps = 0; cap = H*W*8
@@ -268,7 +268,7 @@ add_text(s, Inches(0.7), Inches(3.1), Inches(8), Inches(0.6),
 add_text(s, Inches(0.7), Inches(3.9), Inches(8), Inches(0.5),
          "「どう探すか」で、速さも経路も変わる", size=16, color=MUTED)
 add_text(s, Inches(0.7), Inches(6.7), Inches(8), Inches(0.4),
-         "対応ビジュアライザ:  html/maze.html", size=13, color=MUTED, font=MONO)
+         "対応ビジュアライザ:  docs/maze.html", size=13, color=MUTED, font=MONO)
 
 # ====================================================================
 # 2. 迷路＝グラフ探索
@@ -522,7 +522,7 @@ add_rect(s, Inches(0.5), Inches(4.9), Inches(12.3), Inches(1.5), PANEL2, line=AC
 add_text(s, Inches(0.8), Inches(5.05), Inches(11.7), Inches(0.5),
          "▶ 付属ビジュアライザで体験", size=18, bold=True, color=ACCENT)
 add_text(s, Inches(0.8), Inches(5.55), Inches(11.7), Inches(0.8),
-         "html/maze.html をブラウザで開く → 🌀新しい迷路 → アルゴリズムを選び「次へ」で1歩ずつ / "
+         "docs/maze.html をブラウザで開く → 🌀新しい迷路 → アルゴリズムを選び「次へ」で1歩ずつ / "
          "◀戻るで逆再生 / ↻やり直しで同じ迷路を別アルゴリズムと比較",
          size=14, color=TEXT, font=MONO, line_spacing=1.2)
 add_text(s, Inches(0.5), Inches(6.95), Inches(12.3), Inches(0.4),

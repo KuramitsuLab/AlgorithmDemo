@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ビームサーチの教材スライド (beam.pptx) を生成する。
-html/beam.html と対になる講義用スライド。
+docs/beam.html と対になる講義用スライド。
 おもちゃの言語モデルで実際に探索木を構築し、貪欲(k=1)とビーム(k=2)を比較する。
 """
 import math
@@ -146,7 +146,7 @@ draw_tree(s, Inches(7.4),Inches(1.7),Inches(5.3),Inches(4.2), nodes2, nbw=0.85)
 add_text(s,Inches(0.7),Inches(2.0),Inches(6.4),Inches(1.0),"ビームサーチ",size=48,bold=True)
 add_text(s,Inches(0.7),Inches(3.1),Inches(6.4),Inches(0.6),"LLM が文章を生成する仕組み",size=22,color=ACCENT)
 add_text(s,Inches(0.7),Inches(3.9),Inches(6.4),Inches(0.5),"確率の高い候補だけ残して、続きを探す",size=16,color=MUTED)
-add_text(s,Inches(0.7),Inches(6.7),Inches(6),Inches(0.4),"対応ビジュアライザ:  html/beam.html",size=13,color=MUTED,font=MONO)
+add_text(s,Inches(0.7),Inches(6.7),Inches(6),Inches(0.4),"対応ビジュアライザ:  docs/beam.html",size=13,color=MUTED,font=MONO)
 
 # ====================================================================
 # 2. LLM は1語ずつ確率で生成
@@ -250,7 +250,7 @@ add_text(s,Inches(7.05),Inches(2.2),Inches(5.5),Inches(2.3),
 add_rect(s,Inches(0.5),Inches(4.9),Inches(12.3),Inches(1.5),PANEL2,line=ACCENT,radius=True)
 add_text(s,Inches(0.8),Inches(5.05),Inches(11.7),Inches(0.5),"▶ 付属ビジュアライザで体験",size=18,bold=True,color=ACCENT)
 add_text(s,Inches(0.8),Inches(5.55),Inches(11.7),Inches(0.8),
-         "html/beam.html を開く → ビーム幅 k を設定 → 「次へ」で1語ずつ展開・枝刈り / "
+         "docs/beam.html を開く → ビーム幅 k を設定 → 「次へ」で1語ずつ展開・枝刈り / "
          "残ったビームと累積確率、最終的な最良文をその場で確認",size=14,color=TEXT,font=MONO,ls=1.2)
 add_text(s,Inches(0.5),Inches(6.95),Inches(12.3),Inches(0.4),
          "「どれを残すか」の工夫が、AI の文章生成の質を決めている。",size=14,color=MUTED,align=PP_ALIGN.CENTER)

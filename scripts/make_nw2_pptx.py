@@ -3,7 +3,7 @@
 nw2.pptx を生成するスクリプト（ニューラルネットワーク・多層版 講義スライド）。
  - 数式は matplotlib(mathtext) で画像化して埋め込む
  - 図は numpy で実際に MLP を学習させて描く（決定境界の学習進行・ネットワーク図・損失曲線）
- - 配色/レイアウトは CLAUDE.md の共通パレット・設計パターンに準拠（対になる教材: html/nw2.html, nw2.md）
+ - 配色/レイアウトは CLAUDE.md の共通パレット・設計パターンに準拠（対になる教材: docs/nw2.html, nw2.md）
 実行: python3 make_nw2_pptx.py
 """
 import os, struct, tempfile, itertools
@@ -175,7 +175,7 @@ def pagenum(s, n):
              align=PP_ALIGN.RIGHT, font=MONO)
 
 # ====================================================================
-# numpy 版 MLP（html/nw2.html と同じ数理）
+# numpy 版 MLP（docs/nw2.html と同じ数理）
 # ====================================================================
 def sigmoid(z): return 1.0/(1.0+np.exp(-np.clip(z,-30,30)))
 ACT = {
@@ -433,8 +433,8 @@ add_text(s,0.9,1.5,11.5,1.0,"🧠 ニューラルネットワーク",size=46,bol
 add_text(s,0.9,2.35,11.5,0.6,"多層パーセプトロンの仕組みを数式とデモで理解する",size=22,color=ACCENT)
 add_text(s,0.9,3.25,11.5,1.6,
   "順伝播 → 損失 → **逆伝播** → 最適化 という「学習」の一連の流れを、\n"
-  "**数式**と体験アプリ **html/nw2.html** の観察でつなぐ講義スライド。\n"
-  "対になる教材：詳細ノート **nw2.md** ／ 勾配降下法 **html/gradient.html**",
+  "**数式**と体験アプリ **docs/nw2.html** の観察でつなぐ講義スライド。\n"
+  "対になる教材：詳細ノート **nw2.md** ／ 勾配降下法 **docs/gradient.html**",
   size=16,color=MUTED,line_spacing=1.3)
 add_text(s,0.9,6.5,11,0.4,"アルゴリズム・ビジュアル教材集",size=13,color=MUTED,font=MONO)
 add_eq(s,r"p=\sigma\!\left(W^{(M)}f(\cdots f(W^{(1)}\mathbf{x}+\mathbf{b}^{(1)})\cdots)+\mathbf{b}^{(M)}\right)",

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """水くみ（バケツ）問題の教材スライド (jug.pptx) を生成する。
-html/jug.html と対になる講義用スライド。
+docs/jug.html と対になる講義用スライド。
 状態 (a,b) をノード・6操作をエッジにした状態空間グラフを描き、
 実際に DFS / BFS を走らせた探索結果（訪問・経路）を作図する。
 """
@@ -11,7 +11,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 
-# ---- カラーパレット (html/jug.html と統一) ----
+# ---- カラーパレット (docs/jug.html と統一) ----
 BG     = RGBColor(0xF4, 0xF6, 0xFB)
 PANEL  = RGBColor(0xFF, 0xFF, 0xFF)
 PANEL2 = RGBColor(0xEE, 0xF1, 0xF7)
@@ -216,7 +216,7 @@ add_text(s, Inches(0.7), Inches(3.0), Inches(8), Inches(0.6),
 add_text(s, Inches(0.7), Inches(3.8), Inches(8), Inches(0.5),
          f"5L と 3L のバケツで、ちょうど {T}L を作れる？", size=16, color=MUTED)
 add_text(s, Inches(0.7), Inches(6.7), Inches(8), Inches(0.4),
-         "対応ビジュアライザ:  html/jug.html", size=13, color=MUTED, font=MONO)
+         "対応ビジュアライザ:  docs/jug.html", size=13, color=MUTED, font=MONO)
 
 # ====================================================================
 # 2. 問題と「状態・操作」
@@ -398,7 +398,7 @@ add_rect(s, Inches(0.5), Inches(4.9), Inches(12.3), Inches(1.5), PANEL2, line=AC
 add_text(s, Inches(0.8), Inches(5.05), Inches(11.7), Inches(0.5),
          "▶ 付属ビジュアライザで体験", size=18, bold=True, color=ACCENT)
 add_text(s, Inches(0.8), Inches(5.55), Inches(11.7), Inches(0.8),
-         "html/jug.html をブラウザで開く → A・B・目標を設定 → 「次へ」で1手ずつ状態が増えていく / "
+         "docs/jug.html をブラウザで開く → A・B・目標を設定 → 「次へ」で1手ずつ状態が増えていく / "
          "◀戻るで逆再生 / DFS↔BFS を切り替えて手数を比較",
          size=14, color=TEXT, font=MONO, line_spacing=1.2)
 add_text(s, Inches(0.5), Inches(6.95), Inches(12.3), Inches(0.4),
