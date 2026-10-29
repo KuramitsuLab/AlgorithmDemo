@@ -65,7 +65,7 @@
   .legend i { width:13px; height:13px; border-radius:3px; display:inline-block; flex:none; }
   .note { font-size:12.5px; color:var(--muted); line-height:1.5; }
   .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
-  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  #progress { flex:1; min-width:120px; width:160px; accent-color:var(--accent); }
   .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
   kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
         border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
@@ -86,24 +86,25 @@
       <label>使う数字（クラス）</label>
       <select id="classes">
         <option value="01">0 と 1（2クラス・やさしい）</option>
-        <option value="04" selected>0〜4（5クラス）</option>
-        <option value="09">0〜9（10クラス・むずかしい）</option>
+        <option value="04">0〜4（5クラス）</option>
+        <option value="09" selected>0〜9（10クラス・むずかしい）</option>
       </select>
     </div>
     <div class="field">
       <label>解像度（入力ピクセル）</label>
       <select id="res">
-        <option value="8" selected>8 × 8 ＝ 64</option>
-        <option value="10">10 × 10 ＝ 100</option>
+        <option value="8">8 × 8 ＝ 64</option>
+        <option value="10" selected>10 × 10 ＝ 100</option>
         <option value="14">14 × 14 ＝ 196</option>
       </select>
     </div>
     <div class="field">
-      <label>1数字あたりの枚数</label>
+      <label>学習データ（全体の件数）</label>
       <select id="per">
-        <option value="10">10 枚</option>
-        <option value="20" selected>20 枚</option>
-        <option value="40">40 枚</option>
+        <option value="20">20 件</option>
+        <option value="40" selected>40 件</option>
+        <option value="100">100 件</option>
+        <option value="200">200 件</option>
       </select>
     </div>
     <div class="field">
@@ -111,7 +112,7 @@
       <select id="hidden">
         <option value="0" selected>なし（テンプレート学習）</option>
         <option value="16">16 個（特徴を学習）</option>
-        <option value="32">32 個</option>
+        <option value="32" selected>32 個</option>
       </select>
     </div>
     <div class="field">
@@ -122,14 +123,26 @@
       <label>エポック数</label>
       <select id="epochs">
         <option value="80">80</option>
-        <option value="150" selected>150</option>
-        <option value="300">300</option>
+        <option value="150">150</option>
+        <option value="300" selected>300</option>
         <option value="600">600</option>
       </select>
     </div>
     <div class="spacer"></div>
     <div class="field">
-      <label>再生速度</label>
+      <label>学習の操作</label>
+      <div class="playbar" style="margin:0">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1つ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="学習/一時停止">▶ 学習</button>
+        <button id="next" title="1つ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+    <div class="field">
+      <label>学習速度</label>
       <input type="range" id="speed" min="1" max="60" value="40" style="width:110px">
     </div>
   </div>
@@ -137,7 +150,7 @@
   <div class="layout">
     <div>
       <div class="stage">
-        <div class="arch" id="archLine">64 → 5　｜　パラメータ 325</div>
+        <div class="arch" id="archLine">100 → 32 → 10　｜　パラメータ 3562</div>
         <div class="canvas-row">
           <div class="padcol">
             <canvas id="inpad" width="190" height="190"></canvas>
@@ -157,22 +170,17 @@
           </div>
         </div>
         <div style="width:100%">
+          <canvas id="teach" width="520" height="190" style="width:100%"></canvas>
+          <div class="cap" id="teachCap" style="max-width:none"></div>
+        </div>
+        <div style="width:100%">
           <canvas id="tpl" width="520" height="210" style="width:100%"></canvas>
           <div class="cap" id="tplCap" style="max-width:none">学習された「数字の特徴」（重み。<span style="color:var(--pos)">赤＝そこにインクがあれば+</span>／<span style="color:var(--neg)">青＝−</span>）</div>
         </div>
         <div class="desc">
           <span class="badge" id="opbadge">準備完了</span>
-          <span id="descText">▶ 再生で学習が進みます。パッドに数字を描くと、その時点のネットの認識が右のバーに出ます。</span>
+          <span id="descText">▶ 学習で学習が進みます。パッドに数字を描くと、その時点のネットの認識が右のバーに出ます。</span>
         </div>
-      </div>
-      <div class="playbar">
-        <button id="toStart" title="最初へ">⏮</button>
-        <button id="prev" title="1つ戻る">◀ 戻る</button>
-        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
-        <button id="next" title="1つ進む">次へ ▶</button>
-        <button id="toEnd" title="最後へ">⏭</button>
-        <input type="range" id="progress" min="0" max="0" value="0">
-        <span class="step-label" id="stepLabel">0 / 0</span>
       </div>
     </div>
 
@@ -219,7 +227,7 @@
         <p class="note" style="margin:0">
           ・解像度を <b>8→14</b> に上げると細部が見え正解率↑（でも重い）。<br>
           ・数字を <b>2→10 クラス</b>に増やすと難しくなる。<br>
-          ・枚数を増やすと<b>テスト正解率</b>（未知データ）が上がりやすい＝汎化。<br>
+          ・学習データの件数を増やすと<b>テスト正解率</b>（未知データ）が上がりやすい＝汎化。<br>
           ・パッドに描いて、間違えやすい数字を探そう。<kbd>R</kbd> で再学習。
         </p>
       </div>
@@ -236,8 +244,8 @@
   </div>
 
   <p style="color:var(--muted);font-size:12px;margin-top:16px">
-    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1ステップ ・ <kbd>Space</kbd> 再生切替 ・ <kbd>R</kbd> 初期値を変えて再学習 ／
-    クラス数・解像度・枚数・隠れ層・学習率を変えると最初から学習し直します。
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1ステップ ・ <kbd>Space</kbd> 学習の開始/停止 ・ <kbd>R</kbd> 初期値を変えて再学習 ／
+    クラス数・解像度・件数・隠れ層・学習率を変えると最初から学習し直します。
   </p>
 </div>
 
@@ -282,9 +290,9 @@ function renderGlyph(dg, rng){
   const S=gbig.width;
   gctx.setTransform(1,0,0,1,0,0);
   gctx.fillStyle="#fff"; gctx.fillRect(0,0,S,S);
-  gctx.translate(S/2 + (rng()*2-1)*S*0.10, S/2 + (rng()*2-1)*S*0.11);
-  gctx.rotate((rng()*2-1)*0.32);                 // ±約18°
-  const sx=0.82+rng()*0.34, sy=0.82+rng()*0.34;
+  gctx.translate(S/2 + (rng()*2-1)*S*0.06, S/2 + (rng()*2-1)*S*0.06);
+  gctx.rotate((rng()*2-1)*0.15);                 // ±約9°（少数データでも学べる穏やかな増強）
+  const sx=0.9+rng()*0.2, sy=0.9+rng()*0.2;
   gctx.scale(sx, sy);
   gctx.fillStyle="#000";
   gctx.font='bold '+Math.round(S*0.74)+'px "Hiragino Sans","Yu Gothic",sans-serif';
@@ -345,7 +353,8 @@ function forward(net, x){
 // ====================================================================
 // 状態
 // ====================================================================
-let R=8, DIGITS=[0,1,2,3,4], C=5, PER=20, HID=0, P=64;
+let R=10, DIGITS=[0,1,2,3,4,5,6,7,8,9], C=10, PER=4, HID=32, P=100;
+let SHOW=[];   // 教師データ表示用に間引いた TRAIN のインデックス
 let eta=0.5, EPOCHS=150;
 let TRAIN=[], TEST=[], frames=[], epochOf=[], curNet=null;
 let dataSeed=1, initSeed=1, userVec=null;
@@ -420,6 +429,7 @@ const bcv=$("bars"), bx=bcv.getContext("2d");
 const tcv=$("tpl"), tx=tcv.getContext("2d");
 const ccv=$("chart"), cx=ccv.getContext("2d");
 const gcv=$("gallery"), gx=gcv.getContext("2d");
+const kcv=$("teach"), kx=kcv.getContext("2d");
 const tile=document.createElement("canvas"); const tlx=tile.getContext("2d");
 let cur=0, timer=null, playing=false;
 
@@ -525,6 +535,44 @@ function drawGallery(){
   }
 }
 
+// 教師データ（画像＋正解ラベル）と、現在のネットの答え合わせ
+// 間引き：クラスを均等に回して最大 MAXSHOW 件だけ表示
+const MAXSHOW=20;
+function pickShow(){
+  const by=DIGITS.map(()=>[]);
+  TRAIN.forEach((p,i)=>by[p.label].push(i));
+  SHOW=[];
+  for (let k=0; SHOW.length<Math.min(MAXSHOW,TRAIN.length); k++)
+    for (let c=0;c<C && SHOW.length<MAXSHOW;c++) if (k<by[c].length) SHOW.push(by[c][k]);
+}
+function drawTeach(net, hot){
+  kx.clearRect(0,0,kcv.width,kcv.height);
+  const n=SHOW.length, cols=Math.min(n,10), rowsN=Math.ceil(n/cols);
+  const gap=6, labH=30;
+  const size=Math.min((kcv.width-(cols+1)*gap)/cols, 46);
+  const cellW=size+gap, x0=(kcv.width-(cols*cellW-gap))/2;
+  kx.textAlign="center"; kx.textBaseline="middle";
+  let ok=0;
+  SHOW.forEach((ti,k)=>{
+    const p=TRAIN[ti], r=Math.floor(k/cols), c=k%cols;
+    const x=x0+c*cellW, y=gap+r*(size+labH+gap);
+    const {probs}=forward(net,p.v);
+    let am=0; for (let j=1;j<C;j++) if(probs[j]>probs[am]) am=j;
+    const good=am===p.label; if(good) ok++;
+    drawInkTile(kx,x,y,size,p.v,R);
+    kx.lineWidth=k===hot?3:2; kx.strokeStyle=good?"#4ade80":"#ff6b6b";
+    kx.strokeRect(x-1,y-1,size+2,size+2);
+    kx.fillStyle="#1a2030"; kx.font="bold 12px sans-serif";
+    kx.fillText("正解 "+DIGITS[p.label], x+size/2, y+size+9);
+    kx.fillStyle=good?"#16a34a":"#e11d48"; kx.font="11px sans-serif";
+    kx.fillText("答 "+DIGITS[am]+(good?" ○":" ×"), x+size/2, y+size+22);
+  });
+  $("teachCap").innerHTML=`📘 <b>教師データ</b>（画像＋正解）${TRAIN.length} 件のうち ${n} 件を表示。`
+    +`枠は<span style="color:#16a34a">緑＝ネットの答えが正解</span>／<span style="color:#e11d48">赤＝まちがい</span>`
+    +`（表示分 ${ok}/${n} 正解）`;
+  return SHOW[hot];
+}
+
 // 損失・正解率チャート
 function drawChart(upto){
   cx.clearRect(0,0,ccv.width,ccv.height);
@@ -557,6 +605,8 @@ function renderFrame(i){
   const f=frames[i]; if(!f) return;
   curNet=f.net;
   drawTemplates(curNet);
+  const hot=i%Math.max(1,SHOW.length);          // 注目する教師データを1件ずつ巡回
+  drawTeach(curNet, hot);
   drawChart(i);
   predictUser();
   $("epNum").textContent=epochOf[i];
@@ -565,7 +615,7 @@ function renderFrame(i){
   $("teAcc").textContent=(f.teacc*100).toFixed(0)+"%";
   const badge=$("opbadge"), sl=$("statusLine");
   if (i===0){ badge.textContent="初期状態"; sl.textContent="🎲 ランダムな重み"; sl.style.color="#8a97b0";
-    $("descText").textContent="まだ学習していない状態。特徴はでたらめ、認識も当てずっぽうです。▶ 再生で学習開始。"; }
+    $("descText").textContent="まだ学習していない状態。特徴はでたらめ、認識も当てずっぽうです。▶ 学習で開始。"; }
   else if (i>=frames.length-1){ badge.textContent="学習終了";
     const gap=f.tracc-f.teacc;
     if (f.teacc>0.9){ sl.textContent="✅ よく認識できた"; sl.style.color="#4ade80"; }
@@ -573,7 +623,8 @@ function renderFrame(i){
     else { sl.textContent="🙂 だいたい認識できた"; sl.style.color="#4ade80"; }
     $("descText").textContent=`最終エポック。テスト正解率 ${(f.teacc*100).toFixed(0)}%。特徴（テンプレート）が数字の形に育っています。`; }
   else { badge.textContent="学習中"; sl.textContent="🏃 重みを更新中…"; sl.style.color="#8a97b0";
-    $("descText").textContent=`エポック ${epochOf[i]}：誤差を逆伝播して重みを更新（損失 ${f.loss.toFixed(3)}）。特徴が少しずつ鮮明に。`; }
+    { const p=TRAIN[SHOW[hot]], {probs}=forward(curNet,p.v);
+      $("descText").textContent=`エポック ${epochOf[i]}：教師データ（太枠）は「${DIGITS[p.label]}」と教えられた画像。ネットは「${DIGITS[p.label]}」と ${(probs[p.label]*100).toFixed(0)}% 予測 → 正解との誤差を逆伝播して重みを更新。`; } }
   $("progress").value=i;
   $("stepLabel").textContent=`${i} / ${frames.length-1}`;
   $("prev").disabled=$("toStart").disabled=i<=0;
@@ -615,7 +666,7 @@ function rebuild(){
   DIGITS = cl==="01"?[0,1] : cl==="04"?[0,1,2,3,4] : [0,1,2,3,4,5,6,7,8,9];
   C=DIGITS.length;
   R=parseInt($("res").value,10); P=R*R;
-  PER=parseInt($("per").value,10);
+  PER=Math.max(1,Math.round(parseInt($("per").value,10)/C));   // 1数字あたりの枚数
   HID=parseInt($("hidden").value,10);
   EPOCHS=parseInt($("epochs").value,10);
   eta=parseInt($("rate").value,10)/100;
@@ -628,6 +679,7 @@ function rebuild(){
     : '学習された「数字の特徴」（各数字の重み＝テンプレート。<span style="color:var(--pos)">赤＝そこにインクがあれば+</span>／<span style="color:var(--neg)">青＝−</span>）';
   TRAIN=makeSet(DIGITS, PER, R, dataSeed);
   TEST =makeSet(DIGITS, Math.max(8,Math.round(PER*0.6)), R, dataSeed+5000);
+  pickShow();
   drawGallery();
   build();
   cur=0;
@@ -641,7 +693,7 @@ function goTo(i){ cur=Math.max(0,Math.min(frames.length-1,i)); renderFrame(cur);
 function play(){ if(playing){stop();return;} if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
 function tick(){ if(!playing)return; if(cur>=frames.length-1){stop();return;} goTo(cur+1);
   const sp=parseInt($("speed").value,10); timer=setTimeout(tick, 300-sp*4.6); }
-function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 学習"; }
 
 $("classes").onchange=rebuild;
 $("res").onchange=rebuild;
