@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>マルコフ連鎖 ビジュアライザ — 文字単位のN-gramで『吾輩は猫である』を生成する</title>
+<title>マルコフ連鎖 ビジュアライザ — 文字単位のマルコフ連鎖（N次マルコフ）で『吾輩は猫である』を生成する</title>
 <style>
   :root {
     --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
@@ -83,11 +83,11 @@
 <div class="wrap">
   <div class="controls">
     <div class="field">
-      <label>次数 N（直前の何文字を見るか）</label>
+      <label>文脈長 N（直前の何文字を見るか）</label>
       <select id="order">
-        <option value="1" selected>N = 1（1-gram：直前1文字）</option>
-        <option value="2">N = 2（直前2文字）</option>
-        <option value="3">N = 3（直前3文字）</option>
+        <option value="1" selected>N = 1（直前1文字 ＝ 2-gram）</option>
+        <option value="2">N = 2（直前2文字 ＝ 3-gram）</option>
+        <option value="3">N = 3（直前3文字 ＝ 4-gram）</option>
       </select>
     </div>
     <div class="field">
@@ -205,6 +205,8 @@
           <b>N=1</b> は日本語の"ゆらぎ"しか捉えられず、意味不明な文になる。
           <b>N を増やす</b> と本文の丸暗記に近づき、それらしい文になる代わりに新しさが減る
           （＝データが足りないと丸写しになる＝<b>過学習</b>）。<br><br>
+          <b>用語の注意</b>：n-gram の n は「予測する文字を含めた並びの長さ」なので、手がかりにする直前の文字数は <b>n−1</b>。
+          1-gram は直前を見ず出現頻度だけ、2-gram は直前1文字、3-gram は直前2文字。ここでの N は「直前の文字数」なので N = n−1。<br><br>
           <b>温度 T</b> は確率のとがり具合。T→0 で貪欲（同じ文ばかり）、T が大きいほど珍しい文字も選ぶ。<br><br>
           <b>top-k</b> は確率上位 k 種だけ、<b>top-p</b>（核サンプリング）は確率を上から足して p% に届くまでの種だけを
           残し、その中で確率を割り直してからくじを引く。裾に大量にある「1回しか出てこない文字」を切るので、
