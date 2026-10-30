@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>バケツの問題（手動プレイ）— ルールを選んで状態遷移をたどる</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --node:#38445f; --frontier:#ffd24a; --visited:#2f5d8a;
+    --current:#ff6b6b; --path:#4ade80; --start:#4ade80; --goal:#c084fc;
+    --water:#3aa0ff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input[type=number] { font-family:inherit; }
+  select, input[type=number] { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
+  input[type=number] { width:74px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:14px 18px 18px; display:flex; flex-direction:column; align-items:center; }
+  .tabs { align-self:flex-start; display:flex; gap:6px; margin-bottom:12px; }
+  .tabs button { padding:6px 14px; font-size:13px; }
+  .tabs button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  #treeWrap { width:100%; max-height:520px; overflow:auto; background:#f7f9fc; border-radius:8px; }
+  #treeWrap canvas { max-width:none; display:block; cursor:pointer; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .desc .badge.win { background:var(--goal); border-color:var(--goal); color:#fff; font-weight:600; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:50%; display:inline-block; flex:none; border:1px solid #0008; }
+
+  .rules { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .rules button { text-align:left; padding:8px 10px; font-size:13px; display:flex; flex-direction:column; gap:2px; }
+  .rules button .rn { font-weight:700; color:var(--accent); }
+  .rules button .to { font-family:Consolas,monospace; font-size:12px; color:var(--muted); }
+  .rules button.nochange .to { font-style:italic; }
+  #goalText { font-size:12px; color:var(--muted); margin-top:10px; }
+
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  #pathSeq { font-family:Consolas,monospace; font-size:13px; word-break:break-all; min-height:20px; }
+  #pathSeq.win { color:#16a34a; font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>💧 バケツの問題（手動プレイ）</h1>
+  <span class="sub">6つのルールから1つずつ選んで状態 (A,B) を変え、たどった道を「グラフ」と「ツリー」で眺める</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field"><label>バケツ A（容量）</label><input type="number" id="capA" min="1" max="12" value="5"></div>
+    <div class="field"><label>バケツ B（容量）</label><input type="number" id="capB" min="1" max="9" value="3"></div>
+    <div class="field"><label>目標（どちらかが）</label><input type="number" id="target" min="1" max="12" value="4"></div>
+    <div class="spacer"></div>
+    <button id="reset" title="たどった記録をすべて消して (0,0) から">🗑 最初からやり直す</button>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <div class="tabs">
+          <button id="tabGraph" class="on">状態グラフ</button>
+          <button id="tabTree">ツリー（たどった道）</button>
+        </div>
+        <canvas id="cv" width="760" height="440"></canvas>
+        <div id="treeWrap" style="display:none"><canvas id="tcv" width="760" height="300"></canvas></div>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">右のルール①〜⑥から1つ選んで、(0,0) から状態を変えていこう。</span>
+        </div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初の状態へ">⏮</button>
+        <button id="prev" title="1手戻る">◀ 戻る</button>
+        <button id="next" title="戻る前の道をもう一度進む">進む ▶</button>
+        <button id="toEnd" title="いちばん先まで">⏭</button>
+        <span class="step-label" id="stepLabel">0 手</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>🪣 いまのバケツ</h3>
+        <canvas id="jcv" width="300" height="200" style="width:100%"></canvas>
+      </div>
+
+      <div class="card">
+        <h3>🎯 ルールを選ぶ（キー 1〜6）</h3>
+        <div class="rules" id="rules"></div>
+        <div id="goalText"></div>
+      </div>
+
+      <div class="card">
+        <h3>📊 たどった記録</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="movesNum">0</div><div class="lab">今の手数</div></div>
+          <div class="stat"><div class="num" id="bestNum">—</div><div class="lab">最短手数（ゴール時に表示）</div></div>
+          <div class="stat"><div class="num" id="seenNum">1</div><div class="lab">訪れた状態</div></div>
+          <div class="stat"><div class="num" id="totalNum">0</div><div class="lab">全状態数</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted)">いまの道（丸数字＝使ったルール）</div>
+        <div id="pathSeq">—</div>
+      </div>
+
+      <div class="card">
+        <h3>🎨 色の意味</h3>
+        <div class="legend">
+          <span><i style="background:#f7f9fc;border:1px dashed #9aa6bd"></i>まだ行っていない</span>
+          <span><i style="background:var(--frontier)"></i>次に行ける状態</span>
+          <span><i style="background:var(--visited)"></i>行ったことがある</span>
+          <span><i style="background:var(--current)"></i>今の状態</span>
+          <span><i style="background:var(--path)"></i>今の道</span>
+          <span><i style="background:var(--start);border:2px solid #fff6"></i>スタート</span>
+          <span><i style="background:var(--node);border:2px solid var(--goal)"></i>ゴール</span>
+          <span><i style="background:#fff;border:1px dashed #9aa6bd"></i>ツリーで既出（同じ状態）</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>1</kbd>〜<kbd>6</kbd> ルール選択 ・ <kbd>←</kbd> 1手戻る ・ <kbd>→</kbd> 進む ／
+    戻ってから別のルールを選ぶと、ツリーが枝分かれします。ツリーのノードをクリックするとその状態へ戻れます。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+let A=5, B=3, T=4;
+let N=0;
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+const tcv = $("tcv"), tctx = tcv.getContext("2d");
+const jcv = $("jcv"), jctx = jcv.getContext("2d");
+
+const id  = (a,b) => a*(B+1)+b;
+const isGoal = s => s[0]===T || s[1]===T;
+const CIRC = ["","①","②","③","④","⑤","⑥"];
+
+// ====================================================================
+// 6つのルール（状態 (a,b) → 次の状態）
+// ====================================================================
+const RULES = [
+  { n:1, name:"A を満たす",   f:(a,b)=>[A,b] },
+  { n:2, name:"B を満たす",   f:(a,b)=>[a,B] },
+  { n:3, name:"A を空にする", f:(a,b)=>[0,b] },
+  { n:4, name:"B を空にする", f:(a,b)=>[a,0] },
+  { n:5, name:"A → B に移す", f:(a,b)=>{ const t=Math.min(a,B-b); return [a-t,b+t]; } },
+  { n:6, name:"B → A に移す", f:(a,b)=>{ const t=Math.min(b,A-a); return [a+t,b-t]; } },
+];
+
+// ====================================================================
+// 操作履歴＝ツリー（フレーム録画の代わりに、行った遷移を全部ノードとして残す）
+//   root = (0,0)。ルールを選ぶと cur の子ノードができる。戻って別ルールを
+//   選ぶと枝分かれする。同じルール列は同じノードに合流する。
+// ====================================================================
+let root, cur, all, firstOf, shortest;
+
+function newNode(state, parent, rule) {
+  const n = { state, parent, rule, children:new Map(), last:null, seq:all.length };
+  all.push(n);
+  const k = id(state[0], state[1]);
+  if (!firstOf.has(k)) firstOf.set(k, n);
+  return n;
+}
+function chain(n) { const c=[]; for(let p=n;p;p=p.parent) c.push(p); return c.reverse(); }
+
+function bfsShortest() {            // 最短手数（ゴール到達不能なら -1）
+  const dist = new Map([[id(0,0),0]]); const q=[[0,0]];
+  while (q.length) {
+    const [a,b] = q.shift(); const d = dist.get(id(a,b));
+    if (isGoal([a,b])) return d;
+    for (const r of RULES) { const s=r.f(a,b), k=id(s[0],s[1]);
+      if (!dist.has(k)) { dist.set(k,d+1); q.push(s); } }
+  }
+  return -1;
+}
+
+function apply(ruleN) {
+  const r = RULES[ruleN-1];
+  const s = r.f(cur.state[0], cur.state[1]);
+  if (s[0]===cur.state[0] && s[1]===cur.state[1]) return;       // 変化なしは無効
+  let child = cur.children.get(ruleN);
+  const isNew = !child;
+  if (isNew) { child = newNode(s, cur, ruleN); cur.children.set(ruleN, child); }
+  const from = cur.state;
+  cur.last = child; cur = child;
+  const repeat = isNew && firstOf.get(id(s[0],s[1])) !== child;
+  let badge = "遷移";
+  let msg = `${CIRC[ruleN]} ${r.name}： (${from}) → (${s})` + (repeat ? "　※ すでに通った状態です" : "");
+  if (isGoal(s)) { badge = "ゴール！"; msg = `🎉 ゴール！ (${s}) で ${T} を作れた（${chain(cur).length-1} 手）。`; }
+  render(msg, badge);
+}
+function undo() { if (!cur.parent) return; cur = cur.parent; render("1手戻りました", "戻る"); }
+function redo() { if (!cur.last) return; cur = cur.last; render("もう一度進みました", "進む"); }
+function toStart() { cur = root; render("最初の状態 (0,0) に戻りました", "最初へ"); }
+function toEnd() { while (cur.last) cur = cur.last; render("道の先まで進みました", "最後へ"); }
+function jumpTo(n) { cur = n; for (let p=n; p.parent; p=p.parent) p.parent.last = p; render(`(${n.state}) の状態へ移動しました`, "移動"); }
+
+// ====================================================================
+// 描画：バケツ
+// ====================================================================
+function drawJugs() {
+  const W=jcv.width, H=jcv.height;
+  jctx.clearRect(0,0,W,H);
+  const unit = Math.min(150/Math.max(A,B), 26);          // 1L あたりの高さ(px)
+  const jw = 78, gap = 56, x0 = (W - (2*jw + gap))/2, base = H - 40;
+  [[A,cur.state[0],"A",x0],[B,cur.state[1],"B",x0+jw+gap]].forEach(([cap,v,name,x]) => {
+    const h = cap*unit;
+    // 水
+    jctx.fillStyle = "#3aa0ff"; jctx.globalAlpha = 0.85;
+    jctx.fillRect(x+1, base - v*unit, jw-2, v*unit); jctx.globalAlpha = 1;
+    // 目盛り
+    jctx.strokeStyle = "rgba(60,80,110,0.35)"; jctx.lineWidth = 1;
+    for (let k=1;k<cap;k++) { const y=base-k*unit; jctx.beginPath(); jctx.moveTo(x,y); jctx.lineTo(x+(k%5===0?16:9),y); jctx.stroke(); }
+    // 目標ライン
+    if (T <= cap) { const y=base-T*unit; jctx.setLineDash([4,3]); jctx.strokeStyle="#c084fc"; jctx.lineWidth=2;
+      jctx.beginPath(); jctx.moveTo(x-8,y); jctx.lineTo(x+jw+8,y); jctx.stroke(); jctx.setLineDash([]); }
+    // バケツ枠
+    jctx.strokeStyle = "#38445f"; jctx.lineWidth = 3; jctx.lineJoin = "round";
+    jctx.beginPath(); jctx.moveTo(x,base-h); jctx.lineTo(x,base); jctx.lineTo(x+jw,base); jctx.lineTo(x+jw,base-h); jctx.stroke();
+    // 水量ラベル
+    jctx.textAlign = "center"; jctx.textBaseline = "middle";
+    jctx.fillStyle = "#1a2030"; jctx.font = "bold 20px sans-serif";
+    jctx.fillText(v+" L", x+jw/2, base - Math.max(v*unit/2, 14) + (v===0?-2:0));
+    jctx.fillStyle = "#5d6b82"; jctx.font = "13px sans-serif";
+    jctx.fillText(`${name}（容量 ${cap}）`, x+jw/2, base+20);
+  });
+  jctx.textAlign = "left"; jctx.fillStyle = "#a45bd9"; jctx.font = "11px sans-serif";
+  jctx.fillText(`- - 目標 ${T} L`, 6, 12);
+}
+
+// ====================================================================
+// 描画：状態グラフ（格子上に (a,b) を配置。行った遷移を矢印で描く）
+// ====================================================================
+let MARGIN=46, dx=60, dy=60;
+function layoutGraph() {
+  dx = Math.min(Math.floor((760-2*MARGIN)/Math.max(A,1)), 96);
+  dy = dx;
+  cv.width  = 2*MARGIN + A*dx;
+  cv.height = 2*MARGIN + B*dy;
+}
+const px = a => MARGIN + a*dx;
+const py = b => MARGIN + (B-b)*dy;
+const radius = () => Math.max(13, Math.min(dx,dy)*0.30);
+
+function drawArrow(c, x1,y1,x2,y2, cx,cy, r, color, w) {
+  let ux=x2-cx, uy=y2-cy; const l=Math.hypot(ux,uy)||1; ux/=l; uy/=l;
+  const ex=x2-ux*(r+3), ey=y2-uy*(r+3);
+  c.beginPath(); c.moveTo(x1,y1); c.quadraticCurveTo(cx,cy,ex,ey);
+  c.lineWidth=w; c.strokeStyle=color; c.stroke();
+  const hs=5+w*1.2;
+  c.beginPath(); c.moveTo(ex,ey);
+  c.lineTo(ex-ux*hs-uy*hs*0.55, ey-uy*hs+ux*hs*0.55);
+  c.lineTo(ex-ux*hs+uy*hs*0.55, ey-uy*hs-ux*hs*0.55);
+  c.closePath(); c.fillStyle=color; c.fill();
+}
+function tagBox(c, x, y, text) {
+  c.font="bold 11px sans-serif"; c.textAlign="center"; c.textBaseline="middle";
+  const w=c.measureText(text).width+8;
+  c.fillStyle="#fff"; c.fillRect(x-w/2,y-8,w,16);
+  c.strokeStyle="#c3cbdc"; c.lineWidth=1; c.strokeRect(x-w/2,y-8,w,16);
+  c.fillStyle="#2f7fd9"; c.fillText(text,x,y);
+}
+
+function renderGraph() {
+  const c = ctx, goalNow = isGoal(cur.state);
+  c.clearRect(0,0,cv.width,cv.height);
+  c.fillStyle="#5a6680"; c.font="12px sans-serif"; c.textAlign="center"; c.textBaseline="middle";
+  for (let a=0;a<=A;a++) c.fillText("A="+a, px(a), cv.height-16);
+  c.save(); c.translate(14, cv.height/2); c.rotate(-Math.PI/2);
+  c.fillText("B（縦）／ A（横）＝各バケツの水量", 0, 0); c.restore();
+
+  const route = chain(cur), onRoute = new Set(route);
+  const routeEdge = new Set();
+  for (const n of route) if (n.parent) routeEdge.add(id(n.parent.state[0],n.parent.state[1])+">"+id(n.state[0],n.state[1]));
+  // 遷移エッジ（重複はまとめ、使ったルール番号を添える）
+  const em = new Map();
+  for (const n of all) if (n.parent) {
+    const k = id(n.parent.state[0],n.parent.state[1])+">"+id(n.state[0],n.state[1]);
+    if (!em.has(k)) em.set(k,{u:n.parent.state, v:n.state, rules:new Set()});
+    em.get(k).rules.add(n.rule);
+  }
+  const r = radius(), tags=[];
+  const drawE = (k,e,isRoute) => {
+    const x1=px(e.u[0]),y1=py(e.u[1]),x2=px(e.v[0]),y2=py(e.v[1]);
+    const mx=(x1+x2)/2,my=(y1+y2)/2,ddx=x2-x1,ddy=y2-y1,len=Math.hypot(ddx,ddy)||1;
+    const off=Math.min(len*0.20,28);
+    const cx=mx-ddy/len*off, cy=my+ddx/len*off;
+    drawArrow(c,x1,y1,x2,y2,cx,cy,r, isRoute?(goalNow?"#16a34a":"#2f7fd9"):"rgba(120,140,175,0.55)", isRoute?3.2:1.4);
+    tags.push([0.25*x1+0.5*cx+0.25*x2, 0.25*y1+0.5*cy+0.25*y2, [...e.rules].sort().join(",")]);
+  };
+  for (const [k,e] of em) if (!routeEdge.has(k)) drawE(k,e,false);
+  for (const [k,e] of em) if (routeEdge.has(k)) drawE(k,e,true);
+  for (const t of tags) tagBox(c,t[0],t[1],t[2]);
+
+  // ノード
+  const cand = new Set(RULES.map(q=>q.f(cur.state[0],cur.state[1])).filter(s=>!(s[0]===cur.state[0]&&s[1]===cur.state[1])).map(s=>id(s[0],s[1])));
+  const routeSet = new Set(route.map(n=>id(n.state[0],n.state[1])));
+  for (let a=0;a<=A;a++) for (let b=0;b<=B;b++) {
+    const k=id(a,b), x=px(a), y=py(b), seen=firstOf.has(k), isCur=(k===id(cur.state[0],cur.state[1]));
+    if (!seen && !cand.has(k)) {
+      c.beginPath(); c.arc(x,y,r*0.55,0,Math.PI*2); c.setLineDash([3,3]);
+      c.lineWidth=1; c.strokeStyle="rgba(120,140,175,0.35)"; c.stroke(); c.setLineDash([]);
+      if (isGoal([a,b])) { c.beginPath(); c.arc(x,y,r*0.55+3,0,Math.PI*2); c.lineWidth=2; c.strokeStyle="#c084fc"; c.stroke(); }
+      continue;
+    }
+    let fill = seen ? "#2f5d8a" : "rgba(255,210,74,0.30)";
+    if (seen && routeSet.has(k)) fill="#4ade80";
+    if (isCur) fill="#ff6b6b";
+    c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fillStyle=fill; c.fill();
+    if (cand.has(k)) { c.lineWidth=3; c.strokeStyle="#ffd24a"; c.beginPath(); c.arc(x,y,r+(seen?4:0),0,Math.PI*2); c.stroke(); }
+    if (isGoal([a,b])) { c.lineWidth=3; c.strokeStyle="#c084fc"; c.beginPath(); c.arc(x,y,r+(cand.has(k)?8:0),0,Math.PI*2); c.stroke(); }
+    if (k===id(0,0)) { c.lineWidth=3; c.strokeStyle="rgba(40,55,80,0.55)"; c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.stroke(); }
+    const light = seen && !routeSet.has(k) && !isCur;
+    c.fillStyle = light ? "#e6ecf5" : "#06122a";
+    c.font=`bold ${Math.floor(r*0.62)}px sans-serif`; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText(`${a},${b}`, x, y);
+  }
+}
+
+// ====================================================================
+// 描画：ツリー（たどった道。分かれたところが枝）
+// ====================================================================
+const GX=46, GY=66, TM=34;
+function renderTree() {
+  const wrap=$("treeWrap");
+  let leaf=0, maxD=0;
+  (function rec(n,d){
+    n.depth=d; maxD=Math.max(maxD,d);
+    const ch=[...n.children.entries()].sort((p,q)=>p[0]-q[0]).map(e=>e[1]);
+    if (!ch.length) { n.x=leaf++; return; }
+    ch.forEach(c=>rec(c,d+1));
+    n.x=(ch[0].x+ch[ch.length-1].x)/2;
+  })(root,0);
+  const W=Math.max(wrap.clientWidth||760, 2*TM+(leaf-1)*GX), H=2*TM+maxD*GY;
+  tcv.width=W; tcv.height=H;
+  const c=tctx, goalNow=isGoal(cur.state);
+  c.clearRect(0,0,W,H);
+  const X=n=>(n.px=(W-(leaf-1)*GX)/2+n.x*GX), Y=n=>(n.py=TM+n.depth*GY);
+  for (const n of all) { X(n); Y(n); }
+  const route=chain(cur), onRoute=new Set(route);
+  const r=17;
+  // エッジ
+  for (const pass of [0,1]) for (const n of all) if (n.parent) {
+    const isRoute = onRoute.has(n);
+    if ((pass===1) !== isRoute) continue;
+    c.beginPath(); c.moveTo(n.parent.px,n.parent.py+r); c.lineTo(n.px,n.py-r);
+    c.lineWidth=isRoute?3:1.4; c.strokeStyle=isRoute?(goalNow?"#16a34a":"#2f7fd9"):"rgba(120,140,175,0.55)"; c.stroke();
+    tagBox(c,(n.parent.px+n.px)/2,(n.parent.py+n.py)/2,String(n.rule));
+  }
+  // ノード
+  for (const n of all) {
+    const dup = firstOf.get(id(n.state[0],n.state[1])) !== n;
+    const isCur = n===cur, inRoute = onRoute.has(n);
+    c.beginPath(); c.arc(n.px,n.py,r,0,Math.PI*2);
+    let fill = dup ? "#ffffff" : "#2f5d8a";
+    if (inRoute && !dup) fill="#4ade80"; else if (inRoute && dup) fill="#c6f6d9";
+    if (isCur) fill="#ff6b6b";
+    c.fillStyle=fill; c.fill();
+    if (dup) { c.setLineDash([3,3]); c.lineWidth=1.4; c.strokeStyle="#9aa6bd"; c.stroke(); c.setLineDash([]); }
+    if (isGoal(n.state)) { c.beginPath(); c.arc(n.px,n.py,r,0,Math.PI*2); c.lineWidth=3; c.strokeStyle="#c084fc"; c.stroke(); }
+    if (n===root) { c.beginPath(); c.arc(n.px,n.py,r+3,0,Math.PI*2); c.lineWidth=2; c.strokeStyle="rgba(40,55,80,0.55)"; c.stroke(); }
+    c.fillStyle = (dup && !isCur && !inRoute) ? "#7a869c" : ((inRoute||isCur) ? "#06122a" : "#e6ecf5");
+    c.font="bold 11px sans-serif"; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText(`${n.state[0]},${n.state[1]}`, n.px, n.py);
+  }
+  // 現在位置が見えるようにスクロール
+  if ($("treeWrap").style.display!=="none") {
+    const w=wrap;
+    if (cur.px < w.scrollLeft+30 || cur.px > w.scrollLeft+w.clientWidth-30) w.scrollLeft = cur.px - w.clientWidth/2;
+    if (cur.py < w.scrollTop+30 || cur.py > w.scrollTop+w.clientHeight-30) w.scrollTop = cur.py - w.clientHeight/2;
+  }
+}
+
+// ====================================================================
+// 画面全体の更新
+// ====================================================================
+let view = "graph";
+function render(msg, badge) {
+  const route = chain(cur), moves = route.length-1, goalNow = isGoal(cur.state);
+  // ルールボタン
+  RULES.forEach(rl => {
+    const s = rl.f(cur.state[0],cur.state[1]);
+    const same = s[0]===cur.state[0] && s[1]===cur.state[1];
+    const b = $("rule"+rl.n);
+    b.disabled = same; b.classList.toggle("nochange", same);
+    b.querySelector(".to").textContent = same ? "変化なし" : `→ (${s[0]},${s[1]})`;
+  });
+  if (view==="graph") renderGraph(); else renderTree();
+  drawJugs();
+  // 統計
+  $("movesNum").textContent = moves;
+  $("seenNum").textContent = firstOf.size;
+  $("totalNum").textContent = N;
+  $("bestNum").textContent = goalNow ? (shortest<0 ? "—" : `${shortest}${moves===shortest?" ✓":""}`) : "—";
+  $("pathSeq").textContent = route.map((n,i)=> (i? `${CIRC[n.rule]} `:"") + `(${n.state[0]},${n.state[1]})`).join(" ");
+  $("pathSeq").classList.toggle("win", goalNow);
+  $("stepLabel").textContent = `${moves} 手`;
+  $("prev").disabled = $("toStart").disabled = !cur.parent;
+  $("next").disabled = $("toEnd").disabled = !cur.last;
+  const ob=$("opbadge"); ob.textContent = badge||"—"; ob.classList.toggle("win", goalNow);
+  if (msg) $("descText").textContent = msg;
+  if (goalNow && badge!=="ゴール！") $("descText").textContent = `🎉 ゴール状態 (${cur.state[0]},${cur.state[1]})。${$("descText").textContent}`;
+}
+
+function setView(v) {
+  view = v;
+  $("tabGraph").classList.toggle("on", v==="graph");
+  $("tabTree").classList.toggle("on", v==="tree");
+  cv.style.display = v==="graph" ? "" : "none";
+  $("treeWrap").style.display = v==="tree" ? "" : "none";
+  render(null, $("opbadge").textContent);
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function clampInt(v,lo,hi,def){ v=parseInt(v,10); if(isNaN(v)) v=def; return Math.max(lo,Math.min(hi,v)); }
+function reset() {
+  A = clampInt($("capA").value, 1, 12, 5);
+  B = clampInt($("capB").value, 1, 9, 3);
+  T = clampInt($("target").value, 1, Math.max(A,B), 4);
+  $("capA").value=A; $("capB").value=B; $("target").value=T;
+  N = (A+1)*(B+1);
+  all=[]; firstOf=new Map();
+  root = newNode([0,0], null, 0); cur = root;
+  shortest = bfsShortest();
+  layoutGraph();
+  $("goalText").textContent = `ゴール：A か B のどちらかをちょうど ${T} L にする` +
+    (shortest<0 ? "　⚠ この容量の組ではゴールを作れません" : "");
+  render(`右のルール①〜⑥から1つ選んで、(0,0) から状態を変えていこう。`, "準備完了");
+}
+
+// ルールボタン生成
+RULES.forEach(rl => {
+  const b = document.createElement("button");
+  b.id = "rule"+rl.n;
+  b.innerHTML = `<span class="rn">${CIRC[rl.n]} ${rl.name}</span><span class="to"></span>`;
+  b.onclick = () => apply(rl.n);
+  $("rules").appendChild(b);
+});
+
+["capA","capB","target"].forEach(k => $(k).onchange = reset);
+$("reset").onclick = reset;
+$("toStart").onclick = toStart;
+$("prev").onclick = undo;
+$("next").onclick = redo;
+$("toEnd").onclick = toEnd;
+$("tabGraph").onclick = () => setView("graph");
+$("tabTree").onclick = () => setView("tree");
+
+tcv.addEventListener("click", e => {          // ツリーのノードをクリック → その状態へ
+  const rc = tcv.getBoundingClientRect(), sx = tcv.width/rc.width, sy = tcv.height/rc.height;
+  const x=(e.clientX-rc.left)*sx, y=(e.clientY-rc.top)*sy;
+  let best=null, bd=22;
+  for (const n of all) { const d=Math.hypot(n.px-x,n.py-y); if (d<bd) { bd=d; best=n; } }
+  if (best) jumpTo(best);
+});
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key>="1" && e.key<="6") { apply(+e.key); e.preventDefault(); }
+  else if (e.key==="ArrowLeft") { undo(); e.preventDefault(); }
+  else if (e.key==="ArrowRight") { redo(); e.preventDefault(); }
+});
+
+reset();
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ UI・解説はすべて日本語。テーマは「探索 → 状態空間 → �
 | 整列 | `docs/sort.html` | `make_sort_pptx.py` → `sort.pptx` | バブル/選択/挿入/シェル/クイック/マージ/ヒープ |
 | 迷路探索 | `docs/maze.html` | `make_maze_pptx.py` → `maze.pptx` | DFS / BFS / A* / ランダムウォーク、迷路生成(枝分かれ可変) |
 | バケツ問題 | `docs/jug.html` | `make_jug_pptx.py` → `jug.pptx` | 状態空間グラフを DFS / BFS で探索 |
+| バケツの問題（手動） | `docs/bucket.html` | （未作成） | 手動プレイ版：6つのルール（満たす/空にする/移す）を自分で選んで (0,0) から遷移。たどった道を状態グラフ（矢印）とツリー（枝分かれ・既出表示・クリックで巻き戻し）で表示。ゴール到達で手数と BFS 最短手数を比較 |
 | 最適化 | `docs/grad.html` | `make_gradient_pptx.py` → `gradient.pptx` | 学習率/収束/発散/局所最適、オプティマイザ選択（SGD/Momentum/AdaGrad/RMSProp/Adam） |
 | ビームサーチ | `docs/beam.html` | `make_beam_pptx.py` → `beam.pptx` | LLM の文章生成、貪欲(k=1) vs ビーム |
 | レコメンド | `docs/rec.html` | （未作成） | 協調フィルタリング：ユーザー/アイテムベース、コサイン/ピアソン類似度 |
