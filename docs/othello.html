@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ミニオセロ(6×6)ビジュアライザ — 評価関数つきミニマックス法 / αβ枝刈り</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --frontier:#ffd24a; --visited:#2f5d8a; --current:#ff6b6b; --path:#4ade80;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1280px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+
+  .layout { display:grid; grid-template-columns:1fr 330px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .note { align-self:stretch; font-size:12px; color:var(--muted); margin-top:4px; min-height:18px; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .info table { width:100%; border-collapse:collapse; font-size:13px; }
+  .info td { padding:5px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .info td:first-child { color:var(--muted); white-space:nowrap; }
+  .ops { font-size:13px; color:var(--text); line-height:1.6; }
+  .ops b { color:var(--accent); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:14px; height:14px; border-radius:3px; display:inline-block; flex:none; background:#fff; }
+
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+
+  /* 対戦盤（オセロ） */
+  .board { display:grid; grid-template-columns:repeat(6,44px); grid-template-rows:repeat(6,44px);
+    gap:3px; margin:0 auto 10px; background:#2f7a55; padding:3px; border-radius:8px; width:max-content; }
+  .cell { position:relative; width:44px; height:44px; padding:0; background:#4aa776;
+    border:2px solid transparent; border-radius:3px; }
+  .cell:disabled { opacity:1; cursor:default; }
+  .cell.can { cursor:pointer; }
+  .cell.can:hover:not(:disabled) { background:#5bb887; border-color:transparent; }
+  .cell.can::after { content:""; position:absolute; left:50%; top:50%; width:10px; height:10px;
+    margin:-5px 0 0 -5px; border-radius:50%; background:rgba(255,255,255,.45); }
+  .cell .d { position:absolute; left:50%; top:50%; width:32px; height:32px; margin:-16px 0 0 -16px;
+    border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+  .cell .d.b { background:#1a2030; } .cell .d.w { background:#ffffff; }
+  .cell.last { border-color:var(--current); }
+  .cell.cand { border-color:var(--frontier); box-shadow:0 0 0 3px #ffd24acc; z-index:1; }
+  .cell.best { border-color:var(--path); box-shadow:0 0 0 3px #4ade80cc; z-index:1; }
+  #score { text-align:center; font-size:13px; color:var(--muted); margin-bottom:8px; font-variant-numeric:tabular-nums; }
+  #status { text-align:center; font-size:14px; font-weight:600; min-height:22px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚫ ミニオセロ(6×6)ビジュアライザ</h1>
+  <span class="sub">ルールベース AI：評価関数つきミニマックス法 / αβ枝刈りで「ゲーム木」を先読みする</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>探索アルゴリズム</label>
+      <select id="algo">
+        <option value="mm">ミニマックス法（全部読む）</option>
+        <option value="ab" selected>αβ枝刈り</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>評価関数（葉の点数）</label>
+      <select id="eval">
+        <option value="disc">石の数の差</option>
+        <option value="pos" selected>位置の重み＋打てる手の数</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>手の並び順</label>
+      <select id="order">
+        <option value="none" selected>盤の順（左上から）</option>
+        <option value="good">位置の重みが大きい順</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>読みの深さ（AIの強さ）</label>
+      <select id="sd">
+        <option value="1">1手先</option>
+        <option value="2">2手先</option>
+        <option value="3">3手先</option>
+        <option value="4" selected>4手先</option>
+        <option value="5">5手先</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>表示する深さ</label>
+      <select id="depth">
+        <option value="1">1手先</option>
+        <option value="2">2手先</option>
+        <option value="3" selected>3手先</option>
+        <option value="4">4手先</option>
+        <option value="5">5手先</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>あなたの石</label>
+      <select id="side">
+        <option value="1" selected>●黒（先手）</option>
+        <option value="2">○白（後手）</option>
+      </select>
+    </div>
+    <div class="field"><label>&nbsp;</label><button id="newGame" class="primary">新しいゲーム</button></div>
+    <div class="field"><label>&nbsp;</label><button id="hint" title="あなたの手番の局面をAIに読ませる">💡 この局面を探索</button></div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="30" style="width:130px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="940" height="330"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">盤の打てる場所（白い点）をクリックして指してください。</span>
+        </div>
+        <div class="note" id="depthNote"></div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1コマ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1コマ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>🎮 対戦盤</h3>
+        <div id="score"></div>
+        <div class="board" id="board"></div>
+        <div id="status"></div>
+      </div>
+
+      <div class="card">
+        <h3>📊 探索の進み具合</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="nodeCount">0</div><div class="lab">読んだ局面（累計）</div></div>
+          <div class="stat"><div class="num" id="totalCount">—</div><div class="lab">この探索の総数</div></div>
+          <div class="stat"><div class="num" id="depthNow">0</div><div class="lab">いまの深さ</div></div>
+          <div class="stat"><div class="num" id="cutCount">0</div><div class="lab">枝刈りの回数</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted)">この深さまで読むのに必要な局面数</div>
+        <table style="width:100%;font-size:13px;margin-top:4px">
+          <tr><td>ミニマックス</td><td style="text-align:right" id="cmpMM">—</td></tr>
+          <tr><td>αβ枝刈り</td><td style="text-align:right" id="cmpAB">—</td></tr>
+          <tr><td>削減率</td><td style="text-align:right;color:var(--path);font-weight:700" id="cmpRate">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>📐 ルールと評価値</h3>
+        <div class="ops">
+          <b>ルール</b>：相手の石を自分の石ではさむとひっくり返せる。打てなければパス。両者打てなくなったら終局し、石の多い方が勝ち<br>
+          <b>評価値</b>：<b>黒</b>が有利なほど <b>＋</b>、<b>白</b>が有利なほど <b>−</b><br>
+          <b>MAX（黒の手番）</b>は最大、<b>MIN（白の手番）</b>は最小を選ぶ。<br>
+          6×6 は読み切れないので、指定の深さで読みを打ち切り<b>評価関数</b>で葉に点数をつける（終局なら勝敗で ±1000 以上）。
+        </div>
+      </div>
+
+      <div class="card info">
+        <h3>⏱ アルゴリズムの性質</h3>
+        <table>
+          <tr><td>探索</td><td id="iOrder">—</td></tr>
+          <tr><td>枝刈り</td><td id="iPrune">—</td></tr>
+          <tr><td>特徴</td><td id="iNote">—</td></tr>
+          <tr><td>評価関数</td><td id="iEval">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>🎨 見かたの凡例</h3>
+        <div class="legend">
+          <span><i style="border:3px solid var(--current)"></i>いま試している手</span>
+          <span><i style="border:3px solid var(--path)"></i>ここまでの最良手</span>
+          <span><i style="border:1.5px solid var(--visited)"></i>評価済み</span>
+          <span><i style="border:1px dashed #9aa6bd;opacity:.6"></i>まだ読んでいない</span>
+          <span><i style="border:1px solid #9aa6bd;opacity:.45"></i>✂ 枝刈り（読まない）</span>
+          <span><i style="border:1px solid #9aa6bd"></i>…n：先を省略した局面数</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1コマ移動 ・ <kbd>Space</kbd> 再生切替 ・ <kbd>N</kbd> 新しいゲーム ／
+    各行は「上の行で赤枠の手を指した後の局面」から指せる手を並べたもの（赤い小枠＝その手で置いた場所）。深さが進むほど下の行が増える（＝スタック）。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+const INFO = {
+  mm:{ order:"手を1つ選んで指定の深さまで読み、評価関数の値を返す（深さ優先）",
+       prune:"なし（深さ内のすべての局面を読む）",
+       note:"MAX は最大・MIN は最小を選ぶ。深さが1増えるごとに局面数がおよそ手の数倍になる。" },
+  ab:{ order:"同じ深さ優先。α（MAXの最低保証）と β（MINの最高保証）を持ち回る",
+       prune:"α ≧ β になったら残りの手は読まない（✂）",
+       note:"結果はミニマックスと同じで、読む局面数が大幅に減る。手の並び順（良い手を先に読む）で効果が変わる。" },
+};
+const EVINFO = {
+  disc:"葉の盤面の「黒の石数 − 白の石数」。単純だが序盤は石を取りすぎる側が不利になりがち。",
+  pos:"位置の重み（角は大きな加点、角の隣は減点）の黒白差 ＋ 打てる手の数の差×5。",
+};
+
+const B=1, W=2;                       // 石（黒=先手=MAX, 白=後手=MIN）
+const UNV=0, CUR=1, DONE=2, PRUNED=3; // 子の状態
+const INF=9999;
+const N=6, NN=36;
+const MAXF=15000;                     // 録画フレームの上限（超えたら表示深さを下げる）
+const SYM = {1:"●黒", 2:"○白"};
+const cellName = i => "ABCDEF"[i%N] + (Math.floor(i/N)+1);
+
+// 位置の重み（角が最も大きく、角の斜め隣＝X打ちは危険）
+const WT = Int16Array.from([
+  100,-20, 10, 10,-20,100,
+  -20,-50, -2, -2,-50,-20,
+   10, -2,  1,  1, -2, 10,
+   10, -2,  1,  1, -2, 10,
+  -20,-50, -2, -2,-50,-20,
+  100,-20, 10, 10,-20,100 ]);
+
+// 各マスから8方向に伸びる「線」を前計算
+const RAYS = [];
+for (let i=0;i<NN;i++){
+  const r=Math.floor(i/N), c=i%N, rays=[];
+  for (const [dr,dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]){
+    const ray=[]; let y=r+dr, x=c+dc;
+    while (y>=0&&y<N&&x>=0&&x<N){ ray.push(y*N+x); y+=dr; x+=dc; }
+    if (ray.length>1) rays.push(ray);          // 2マス以上ないとはさめない
+  }
+  RAYS.push(rays);
+}
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+// ゲーム状態
+let pos, turn, human, over, lastMove, aiPending, bestMove, passMsg;
+// 録画
+let frames=[], cur=0, timer=null, playing=false;
+let showDepth=3, usePrune=true, SD=4, evalMode="pos", goodOrder=false;
+
+// ====================================================================
+// ルール
+// ====================================================================
+function flipsOf(b, i, p){                       // i に p を置いたときにひっくり返る石
+  if (b[i]) return [];
+  const out=[], q=3-p;
+  for (const ray of RAYS[i]){
+    let k=0;
+    while (k<ray.length && b[ray[k]]===q) k++;
+    if (k>0 && k<ray.length && b[ray[k]]===p) for (let j=0;j<k;j++) out.push(ray[j]);
+  }
+  return out;
+}
+function canPlay(b, i, p){
+  if (b[i]) return false;
+  const q=3-p;
+  for (const ray of RAYS[i]){
+    let k=0;
+    while (k<ray.length && b[ray[k]]===q) k++;
+    if (k>0 && k<ray.length && b[ray[k]]===p) return true;
+  }
+  return false;
+}
+function legal(b, p){ const m=[]; for (let i=0;i<NN;i++) if (canPlay(b,i,p)) m.push(i); return m; }
+function apply(b, i, p){                         // 新しい盤を返す（i<0 はパス）
+  const nb=b.slice();
+  if (i>=0){ nb[i]=p; for (const j of flipsOf(b,i,p)) nb[j]=p; }
+  return nb;
+}
+function count(b){ let x=0,y=0; for (let i=0;i<NN;i++){ if (b[i]===B) x++; else if (b[i]===W) y++; } return [x,y]; }
+
+// ====================================================================
+// 評価（黒が有利なほど正）
+// ====================================================================
+function terminalVal(b){ const [x,y]=count(b), d=x-y; return d>0 ? 1000+d : d<0 ? -1000+d : 0; }
+function evalFn(b){
+  let s=0;
+  if (evalMode==="disc"){ for (let i=0;i<NN;i++) s += b[i]===B ? 1 : b[i]===W ? -1 : 0; return s; }
+  for (let i=0;i<NN;i++) s += b[i]===B ? WT[i] : b[i]===W ? -WT[i] : 0;
+  return s + 5*(legal(b,B).length - legal(b,W).length);
+}
+const vtxt = v => v>=INF ? "+∞" : v<=-INF ? "−∞" : v>0 ? "+"+v : v<0 ? "−"+(-v) : "0";
+
+// 葉なら評価値、まだ読むなら null
+function leaf(b, player, left){
+  if (!legal(b,player).length && !legal(b,3-player).length) return terminalVal(b);
+  return left<=0 ? evalFn(b) : null;
+}
+function orderMoves(mv){ if (goodOrder) mv.sort((a,b)=>WT[b]-WT[a]); return mv; }
+
+// ====================================================================
+// 探索（記録なし）：ノード数を数えるだけ。表示深さより下の「省略部分」にも使う
+// ====================================================================
+let nodeCount=0;
+function ab(b, left, player, alpha, beta, prune){
+  nodeCount++;
+  let mv=legal(b,player);
+  if (!mv.length){
+    if (!legal(b,3-player).length) return terminalVal(b);
+    mv=[-1];                                      // パス
+  } else orderMoves(mv);
+  if (left===0) return evalFn(b);
+  const max = player===B;
+  let best = max ? -INF : INF;
+  for (const m of mv){
+    const v=ab(apply(b,m,player), left-1, 3-player, alpha, beta, prune);
+    if (max){ if (v>best) best=v; if (best>alpha) alpha=best; }
+    else    { if (v<best) best=v; if (best<beta)  beta=best; }
+    if (prune && alpha>=beta) break;
+  }
+  return best;
+}
+function countNodes(b, player, prune){
+  const save=nodeCount; nodeCount=0;
+  ab(b, SD, player, -INF, INF, prune);
+  const n=nodeCount; nodeCount=save; return n;
+}
+
+// ====================================================================
+// 探索（フレーム録画）：表示深さ showDepth までのノードは1手ずつ記録する
+//   R[d] = 深さ d の局面を展開したときの「子の一覧」（= スタックの1段）
+// ====================================================================
+let R=[], cutCount=0, dry=false, fc=0;
+
+function cloneRow(r){ return {...r, st:r.st.slice(), val:r.val.slice(), cnt:r.cnt.slice()}; }
+function emit(op, desc, final){
+  fc++;
+  if (dry) return;
+  frames.push({ rows:R.slice(), op, desc, nodes:nodeCount, cuts:cutCount, depth:R.length-1, final:!!final });
+}
+
+function rs(b, d, player, alpha, beta){          // 深さ d の局面（葉でない）を展開
+  nodeCount++;
+  const max = player===B;
+  let moves=legal(b,player);
+  const pass=!moves.length;
+  if (pass) moves=[-1]; else orderMoves(moves);
+  if (!dry){
+    R.length=d;
+    R[d]={ board:b, player, max, alpha, beta, moves,
+           st:moves.map(()=>UNV), val:moves.map(()=>null), cnt:moves.map(()=>0), best:-1 };
+  }
+  emit("展開", pass
+    ? `深さ${d}：${SYM[player]}の手番（${max?"MAX":"MIN"}）。打てる場所がないので「パス」だけ`
+    : `深さ${d}：${SYM[player]}の手番（${max?"MAX":"MIN"}）。指せる手 ${moves.length} 個を並べる`);
+
+  let best = max ? -INF : INF, bestK=-1;
+  for (let k=0;k<moves.length;k++){
+    const m=moves[k];
+    if (!dry){
+      R.length=d+1;
+      const r=cloneRow(R[d]); r.st[k]=CUR; r.alpha=alpha; r.beta=beta; R[d]=r;
+    }
+    emit("試す", m<0 ? `深さ${d}：${SYM[player]}はパスする`
+                     : `深さ${d}：${SYM[player]}を「${cellName(m)}」に置いてみる（${flipsOf(b,m,player).length} 個ひっくり返る）`);
+    const nb=apply(b,m,player);
+    let v, cnt=0;
+    const lv=leaf(nb, 3-player, SD-(d+1));
+    if (lv!==null){
+      nodeCount++; v=lv;
+    } else if (d+1<showDepth){
+      v = rs(nb, d+1, 3-player, alpha, beta);
+    } else {
+      const n0=nodeCount;
+      v = ab(nb, SD-(d+1), 3-player, alpha, beta, usePrune);
+      cnt = nodeCount-n0;
+    }
+
+    const better = max ? v>best : v<best;
+    if (better){ best=v; bestK=k; }
+    if (max) alpha=Math.max(alpha,best); else beta=Math.min(beta,best);
+    const cut = usePrune && alpha>=beta && k<moves.length-1;
+    if (!dry){
+      R.length=d+1;
+      const r=cloneRow(R[d]);
+      r.st[k]=DONE; r.val[k]=v; r.cnt[k]=cnt; r.alpha=alpha; r.beta=beta; r.best=bestK;
+      if (cut) for (let j=k+1;j<moves.length;j++) r.st[j]=PRUNED;
+      R[d]=r;
+    }
+    if (cut) cutCount++;
+    const name = m<0 ? "パス" : cellName(m);
+    const note = cut
+      ? `α=${vtxt(alpha)} ≧ β=${vtxt(beta)} → 残り ${moves.length-1-k} 手は読まない（✂ 枝刈り）`
+      : better ? `暫定の${max?"最大":"最小"}を更新：${vtxt(best)}`
+               : `${vtxt(best)} のまま（この手は改善しない）`;
+    emit(cut?"枝刈り":"評価", `深さ${d}：「${name}」の評価値は ${vtxt(v)}。${note}`);
+    if (cut) break;
+  }
+  return best;
+}
+
+// 現在の局面から探索を録画する
+function think(commit){
+  stop();
+  const b=pos.slice();
+  usePrune = $("algo").value==="ab";
+  evalMode = $("eval").value;
+  goodOrder = $("order").value==="good";
+  SD = parseInt($("sd").value,10);
+  let d=Math.min(parseInt($("depth").value,10), SD);
+  const want=d;
+  dry=true;
+  for (;;){                              // フレーム数が多すぎたら表示深さを下げる
+    showDepth=d;
+    R=[]; fc=0; nodeCount=0; cutCount=0;
+    rs(b, 0, turn, -INF, INF);
+    if (fc<=MAXF || d<=1) break;
+    d--;
+  }
+  dry=false;
+  showDepth=d;
+  $("depthNote").textContent = d<want
+    ? `※ フレーム数が多すぎるため、表示する深さを ${want} → ${d} に自動調整しました（それより深い部分は省略して数だけ数えます）。` : "";
+
+  frames=[]; R=[]; fc=0; nodeCount=0; cutCount=0;
+  rs(b, 0, turn, -INF, INF);
+  const root=R[0];
+  bestMove = root.moves[root.best];
+  const total=nodeCount;
+  emit("完了", `${SD}手先まで読み切り：最善手は「${cellName(bestMove)}」（評価値 ${vtxt(root.val[root.best])}）。${commit?"AI がこの手を指します":"ヒント：この手が最善です"}`, true);
+  frames.forEach(f=>f.total=total);
+
+  const other=countNodes(b, turn, !usePrune);
+  const mm = usePrune ? other : total, abn = usePrune ? total : other;
+  $("cmpMM").textContent = mm.toLocaleString();
+  $("cmpAB").textContent = abn.toLocaleString();
+  $("cmpRate").textContent = (100*(1-abn/mm)).toFixed(1)+" %";
+
+  aiPending = commit;
+  layoutCanvas();
+  cur=0;
+  $("progress").max=frames.length-1;
+  renderFrame(0);
+  timer=setTimeout(play, 300);
+}
+
+function idleFrames(msg){
+  stop();
+  frames=[{ rows:[], op:"待機", desc:msg, nodes:0, cuts:0, depth:0, final:false, total:null }];
+  showDepth=Math.min(showDepth,3);
+  cur=0; aiPending=false; bestMove=-1;
+  $("progress").max=0;
+  layoutCanvas();
+  $("depthNote").textContent="";
+  renderFrame(0);
+}
+
+// ====================================================================
+// 対戦
+// ====================================================================
+const IDLE_MSG = "あなたの番です。打てる場所（白い点）をクリックするとAIがその後の局面を読み始めます（💡で自分の番の局面も読ませられます）。";
+
+function newGame(){
+  stop();
+  pos=new Int8Array(NN);
+  pos[14]=W; pos[21]=W; pos[15]=B; pos[20]=B;      // 中央の4つ
+  turn=B; over=false; lastMove=-1; passMsg="";
+  human=parseInt($("side").value,10);
+  ["cmpMM","cmpAB","cmpRate"].forEach(k=>$(k).textContent="—");
+  updateStatus(); renderBoard();
+  if (turn!==human) think(true);
+  else idleFrames(IDLE_MSG);
+}
+
+function place(i){
+  pos=apply(pos,i,turn); lastMove=i;
+  const opp=3-turn;
+  passMsg="";
+  if (legal(pos,opp).length) turn=opp;
+  else if (legal(pos,turn).length) passMsg=`${SYM[opp]}は打てる場所がないのでパス。${SYM[turn]}がもう一度打ちます。`;
+  else over=true;
+  updateStatus(); renderBoard();
+  if (!over && turn!==human) think(true);
+}
+
+function onCell(i){
+  if (over || turn!==human || aiPending || !canPlay(pos,i,turn)) return;
+  place(i);
+}
+
+function commitMove(){
+  aiPending=false;
+  if (bestMove>=0 && !over) place(bestMove);
+}
+
+function updateStatus(){
+  const [x,y]=count(pos);
+  $("score").textContent = `●黒 ${x}　　○白 ${y}`;
+  let s;
+  if (over){
+    const w = x>y ? B : y>x ? W : 0;
+    s = !w ? "引き分け" : w===human ? `あなたの勝ち（${SYM[w]}）！` : `AI の勝ち（${SYM[w]}）`;
+  } else {
+    s = turn===human ? `あなたの番です（${SYM[turn]}）` : `AI が考え中…（${SYM[turn]}）`;
+    if (passMsg) s = passMsg + " " + s;
+  }
+  $("status").textContent=s;
+}
+
+function renderBoard(f){
+  const bd=$("board");
+  if (!bd.children.length){
+    for (let i=0;i<NN;i++){
+      const c=document.createElement("button"); c.className="cell"; c.onclick=()=>onCell(i);
+      const d=document.createElement("span"); d.className="d"; d.style.display="none"; c.appendChild(d);
+      bd.appendChild(c);
+    }
+  }
+  const row0 = f && f.rows[0], cand = row0 && row0.st.indexOf(CUR)>=0 ? row0.moves[row0.st.indexOf(CUR)] : -1;
+  const showBest = f && f.final && bestMove>=0;
+  const myTurn = !over && turn===human && !aiPending;
+  for (let i=0;i<NN;i++){
+    const c=bd.children[i], d=c.firstChild;
+    d.style.display = pos[i] ? "block" : "none";
+    d.className = "d" + (pos[i]===B ? " b" : " w");
+    const can = myTurn && canPlay(pos,i,turn);
+    let cls="cell"+(can?" can":"");
+    if (i===lastMove) cls+=" last";
+    if (cand===i && f && !f.final) cls+=" cand";
+    if (showBest && i===bestMove && !pos[i]) cls+=" best";
+    c.className=cls;
+    c.disabled = !can;
+  }
+  $("hint").disabled = !myTurn;
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+const ROW_H=84, KID_X=200, KID_W=720, KS_MAX=50, STEP_MAX=60;
+function layoutCanvas(){
+  cv.height = Math.max(3,showDepth)*ROW_H + 10;
+}
+
+function drawMini(x, y, ks, b, newCell, alpha, label){
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle="#6fbf93"; ctx.fillRect(x,y,ks,ks);
+  const cs=ks/N;
+  ctx.strokeStyle="#3f8f68"; ctx.lineWidth=1; ctx.beginPath();
+  for (let i=1;i<N;i++){
+    ctx.moveTo(x+i*cs,y); ctx.lineTo(x+i*cs,y+ks);
+    ctx.moveTo(x,y+i*cs); ctx.lineTo(x+ks,y+i*cs);
+  }
+  ctx.stroke();
+  for (let i=0;i<NN;i++) if (b[i]){
+    const cx=x+(i%N)*cs+cs/2, cy=y+Math.floor(i/N)*cs+cs/2;
+    ctx.beginPath(); ctx.arc(cx,cy,cs*0.38,0,Math.PI*2);
+    ctx.fillStyle = b[i]===B ? "#1a2030" : "#ffffff"; ctx.fill();
+    ctx.strokeStyle="#1a2030"; ctx.lineWidth=0.6; ctx.stroke();
+  }
+  if (newCell>=0){
+    ctx.strokeStyle="#ff6b6b"; ctx.lineWidth=1.6;
+    ctx.strokeRect(x+(newCell%N)*cs+0.5, y+Math.floor(newCell/N)*cs+0.5, cs-1, cs-1);
+  }
+  if (label){
+    ctx.fillStyle="rgba(255,255,255,0.8)"; ctx.fillRect(x,y+ks/2-8,ks,16);
+    ctx.fillStyle="#1a2030"; ctx.font="bold 11px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(label, x+ks/2, y+ks/2);
+  }
+  ctx.globalAlpha=1;
+}
+function valColor(v){ return v>0 ? "#2f7fd9" : v<0 ? "#e04f4f" : "#5d6b82"; }
+
+function drawRow(r, d){
+  const y0=d*ROW_H+6;
+  if (d>0){ ctx.strokeStyle="#e1e6f0"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(6,y0-4); ctx.lineTo(cv.width-6,y0-4); ctx.stroke(); }
+  // 左：いま展開している局面
+  const KL=50;
+  drawMini(10, y0+4, KL, r.board, -1, 1);
+  ctx.strokeStyle="#9aa6bd"; ctx.lineWidth=1; ctx.strokeRect(10,y0+4,KL,KL);
+  ctx.fillStyle="#1a2030"; ctx.font="bold 12px sans-serif"; ctx.textAlign="left"; ctx.textBaseline="top";
+  ctx.fillText(`深さ ${d}`, 68, y0+4);
+  ctx.font="12px sans-serif"; ctx.fillStyle=r.player===B?"#1a2030":"#7a8aa5";
+  ctx.fillText(`${SYM[r.player]}の手番 ${r.max?"MAX":"MIN"}`, 68, y0+21);
+  if (usePrune){
+    ctx.fillStyle="#5d6b82"; ctx.font="11px Consolas,monospace";
+    ctx.fillText(`α=${vtxt(r.alpha)}`, 68, y0+38);
+    ctx.fillText(`β=${vtxt(r.beta)}`, 68, y0+52);
+  }
+  // 右：子（指せる手）
+  const n=r.moves.length;
+  const step=Math.min(STEP_MAX, Math.floor(KID_W/n)), ks=Math.min(KS_MAX, step-6);
+  for (let k=0;k<n;k++){
+    const m=r.moves[k], x=KID_X+k*step, y=y0+4, s=r.st[k];
+    const kb=apply(r.board,m,r.player);
+    drawMini(x, y, ks, kb, m, s===UNV ? 0.4 : s===PRUNED ? 0.3 : 1, m<0 ? "パス" : null);
+    ctx.lineJoin="miter";
+    if (s===UNV){ ctx.setLineDash([3,3]); ctx.strokeStyle="rgba(120,140,175,0.6)"; ctx.lineWidth=1; ctx.strokeRect(x,y,ks,ks); ctx.setLineDash([]); }
+    else if (s===CUR){ ctx.strokeStyle="#ff6b6b"; ctx.lineWidth=3; ctx.strokeRect(x-1,y-1,ks+2,ks+2); }
+    else if (s===DONE){
+      if (k===r.best){ ctx.strokeStyle="#4ade80"; ctx.lineWidth=3; ctx.strokeRect(x-1,y-1,ks+2,ks+2); }
+      else { ctx.strokeStyle="#2f5d8a"; ctx.lineWidth=1.5; ctx.strokeRect(x,y,ks,ks); }
+    } else { ctx.strokeStyle="rgba(120,140,175,0.5)"; ctx.lineWidth=1; ctx.strokeRect(x,y,ks,ks); }
+    ctx.textAlign="center"; ctx.textBaseline="top";
+    if (s===DONE){
+      ctx.font="bold 13px Consolas,monospace"; ctx.fillStyle=valColor(r.val[k]);
+      ctx.fillText(vtxt(r.val[k]), x+ks/2, y+ks+3);
+      if (r.cnt[k]>0){ ctx.font="10px sans-serif"; ctx.fillStyle="#8a96ab"; ctx.fillText("…"+r.cnt[k].toLocaleString(), x+ks/2, y+ks+17); }
+    } else if (s===CUR){
+      ctx.font="bold 13px sans-serif"; ctx.fillStyle="#ff6b6b"; ctx.fillText("?", x+ks/2, y+ks+3);
+    } else if (s===PRUNED){
+      ctx.font="bold 20px sans-serif"; ctx.fillStyle="#8a96ab"; ctx.textBaseline="middle";
+      ctx.fillText("✂", x+ks/2, y+ks/2);
+    }
+  }
+}
+
+function renderFrame(i){
+  const f=frames[i];
+  ctx.fillStyle="#f7f9fc"; ctx.fillRect(0,0,cv.width,cv.height);
+  if (!f.rows.length){
+    ctx.fillStyle="#8a96ab"; ctx.font="14px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("ここにAIの探索（ゲーム木の読み）が表示されます", cv.width/2, cv.height/2);
+  }
+  f.rows.forEach((r,d)=>drawRow(r,d));
+
+  $("nodeCount").textContent = f.nodes.toLocaleString();
+  $("totalCount").textContent = f.total!=null ? f.total.toLocaleString() : "—";
+  $("depthNow").textContent = f.rows.length ? f.depth : 0;
+  $("cutCount").textContent = f.cuts;
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op;
+
+  $("progress").value=i;
+  $("stepLabel").textContent=`${i} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = i<=0;
+  $("next").disabled = $("toEnd").disabled = i>=frames.length-1;
+  renderBoard(f);
+}
+
+function showInfo(){
+  const x=INFO[$("algo").value];
+  $("iOrder").textContent=x.order; $("iPrune").textContent=x.prune; $("iNote").textContent=x.note;
+  $("iEval").textContent=EVINFO[$("eval").value];
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function goTo(i){
+  cur=Math.max(0,Math.min(frames.length-1,i));
+  renderFrame(cur);
+  if (cur>=frames.length-1){ stop(); if (aiPending) commitMove(); }
+}
+function play(){ if(playing){stop();return;} if(frames.length<2) return; if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){
+  if(!playing) return;
+  const sp=parseInt($("speed").value,10), delay=520-sp*8;
+  const base = sp<45 ? 1 : Math.pow(2, Math.floor((sp-45)/4)+1);
+  const skip = Math.max(base, Math.ceil(frames.length*delay/15000));   // 長い探索は約15秒に収める
+  goTo(cur+skip);
+  if (playing) timer=setTimeout(tick, delay);
+}
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+function onParam(){
+  showInfo();
+  if (aiPending) think(true);
+  else if (!over && turn===human) idleFrames("設定を変更しました。打てる場所をクリックするか、💡で探索してください。");
+}
+["algo","eval","order","sd","depth"].forEach(k => $(k).onchange = onParam);
+$("side").onchange = newGame;
+$("newGame").onclick = newGame;
+$("hint").onclick = () => { if (!over && turn===human && !aiPending) think(false); };
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+  else if (e.key==="n"||e.key==="N"){ newGame(); }
+});
+
+showInfo();
+newGame();
+</script>
+</body>
+</html>

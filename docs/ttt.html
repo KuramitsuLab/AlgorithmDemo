@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三目並べビジュアライザ — ミニマックス法 / αβ枝刈りでゲーム木を探索</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --frontier:#ffd24a; --visited:#2f5d8a; --current:#ff6b6b; --path:#4ade80;
+    --o:#2f7fd9; --x:#ff6b6b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+
+  .layout { display:grid; grid-template-columns:1fr 330px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .note { align-self:stretch; font-size:12px; color:var(--muted); margin-top:4px; min-height:18px; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .info table { width:100%; border-collapse:collapse; font-size:13px; }
+  .info td { padding:5px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .info td:first-child { color:var(--muted); white-space:nowrap; }
+  .ops { font-size:13px; color:var(--text); line-height:1.6; }
+  .ops b { color:var(--accent); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:14px; height:14px; border-radius:3px; display:inline-block; flex:none; background:#fff; }
+
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+
+  /* 対戦盤 */
+  .board { display:grid; grid-template-columns:repeat(3,88px); grid-template-rows:repeat(3,88px);
+    gap:6px; justify-content:center; margin:0 auto 10px; }
+  .cell { width:88px; height:88px; padding:0; font-size:54px; font-weight:700; line-height:1;
+    background:var(--panel2); border:2px solid var(--line); border-radius:10px; }
+  .cell.o { color:var(--o); } .cell.x { color:var(--x); }
+  .cell.last { border-color:#9aa6bd; }
+  .cell.cand { border-color:var(--frontier); box-shadow:0 0 0 3px #ffd24a88; }
+  .cell.best { border-color:var(--path); box-shadow:0 0 0 3px #4ade8099; }
+  .cell.win { background:#d9f7e4; border-color:var(--path); }
+  .cell:disabled { opacity:1; cursor:default; }
+  .cell:not(:disabled):hover { background:#e4eaf5; }
+  #status { text-align:center; font-size:14px; font-weight:600; min-height:22px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⭕ 三目並べビジュアライザ</h1>
+  <span class="sub">ルールベース AI：ミニマックス法 / αβ枝刈りで「ゲーム木」を読み切る</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>探索アルゴリズム</label>
+      <select id="algo">
+        <option value="mm">ミニマックス法（全部読む）</option>
+        <option value="ab" selected>αβ枝刈り</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>あなたの記号</label>
+      <select id="side">
+        <option value="1" selected>○（先手）</option>
+        <option value="2">×（後手）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>表示する深さ</label>
+      <select id="depth">
+        <option value="1">1手先</option>
+        <option value="2">2手先</option>
+        <option value="3">3手先</option>
+        <option value="4" selected>4手先</option>
+        <option value="5">5手先</option>
+        <option value="6">6手先</option>
+        <option value="9">すべて</option>
+      </select>
+    </div>
+    <div class="field"><label>&nbsp;</label><button id="newGame" class="primary">新しいゲーム</button></div>
+    <div class="field"><label>&nbsp;</label><button id="hint" title="あなたの手番の局面をAIに読ませる">💡 この局面を探索</button></div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="30" style="width:130px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="760" height="330"></canvas>
+        <div class="desc">
+          <span class="badge" id="opbadge">準備完了</span>
+          <span id="descText">盤の升目をクリックして指してください。</span>
+        </div>
+        <div class="note" id="depthNote"></div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1手戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1手進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>🎮 対戦盤</h3>
+        <div class="board" id="board"></div>
+        <div id="status"></div>
+      </div>
+
+      <div class="card">
+        <h3>📊 探索の進み具合</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="nodeCount">0</div><div class="lab">読んだ局面（累計）</div></div>
+          <div class="stat"><div class="num" id="totalCount">—</div><div class="lab">この探索の総数</div></div>
+          <div class="stat"><div class="num" id="depthNow">0</div><div class="lab">いまの深さ</div></div>
+          <div class="stat"><div class="num" id="cutCount">0</div><div class="lab">枝刈りの回数</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted)">この局面を読み切るのに必要な局面数</div>
+        <table style="width:100%;font-size:13px;margin-top:4px">
+          <tr><td>ミニマックス</td><td style="text-align:right" id="cmpMM">—</td></tr>
+          <tr><td>αβ枝刈り</td><td style="text-align:right" id="cmpAB">—</td></tr>
+          <tr><td>削減率</td><td style="text-align:right;color:var(--path);font-weight:700" id="cmpRate">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>📐 ルールと評価値</h3>
+        <div class="ops">
+          <b>勝敗ルール</b>：縦・横・斜めに3つそろえば勝ち<br>
+          <b>評価値</b>：○の勝ち = <b>+(10−手数)</b>、×の勝ち = <b>−(10−手数)</b>、引き分け = 0<br>
+          <b>MAX（○の手番）</b>は最大、<b>MIN（×の手番）</b>は最小を選ぶ。早く勝つほど高得点。
+        </div>
+      </div>
+
+      <div class="card info">
+        <h3>⏱ アルゴリズムの性質</h3>
+        <table>
+          <tr><td>探索</td><td id="iOrder">—</td></tr>
+          <tr><td>枝刈り</td><td id="iPrune">—</td></tr>
+          <tr><td>特徴</td><td id="iNote">—</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>🎨 見かたの凡例</h3>
+        <div class="legend">
+          <span><i style="border:3px solid var(--current)"></i>いま試している手</span>
+          <span><i style="border:3px solid var(--path)"></i>ここまでの最良手</span>
+          <span><i style="border:1.5px solid var(--visited)"></i>評価済み</span>
+          <span><i style="border:1px dashed #9aa6bd;opacity:.6"></i>まだ読んでいない</span>
+          <span><i style="border:1px solid #9aa6bd;opacity:.45"></i>✂ 枝刈り（読まない）</span>
+          <span><i style="border:1px solid #9aa6bd"></i>…n：先を省略した局面数</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:16px">
+    キーボード: <kbd>←</kbd>/<kbd>→</kbd> 1コマ移動 ・ <kbd>Space</kbd> 再生切替 ・ <kbd>N</kbd> 新しいゲーム ／
+    各行は「上の行で赤枠の手を指した後の局面」から指せる手を並べたもの。深さが進むほど下の行が増える（＝スタック）。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+const INFO = {
+  mm:{ order:"手を1つ選んで葉まで読み、値を返す（深さ優先）",
+       prune:"なし（すべての局面を読む）",
+       note:"MAX は最大・MIN は最小を選ぶ。結果は最善だが、初手では約55万局面も読む。" },
+  ab:{ order:"同じ深さ優先。α（MAXの最低保証）と β（MINの最高保証）を持ち回る",
+       prune:"α ≧ β になったら残りの手は読まない（✂）",
+       note:"結果はミニマックスと同じで、読む局面数が大幅に減る。手の並び順で効果が変わる。" },
+};
+
+const O=1, X=2;                       // 盤の記号（○=先手=MAX, ×=後手=MIN）
+const UNV=0, CUR=1, DONE=2, PRUNED=3; // 子の状態
+const INF=99;
+const MAXF=15000;                     // 録画フレームの上限（超えたら表示深さを下げる）
+const CELL = ["左上","上","右上","左","中央","右","左下","下","右下"];
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+const SYM = {1:"○", 2:"×"};
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+// ゲーム状態
+let pos, turn, human, over, winLine, lastMove, aiPending, bestMove;
+// 録画
+let frames=[], cur=0, timer=null, playing=false;
+let showDepth=4, usePrune=true;
+
+// ====================================================================
+// ルール・評価
+// ====================================================================
+function winLineOf(b){ for (const L of LINES){ const [x,y,z]=L; if (b[x] && b[x]===b[y] && b[x]===b[z]) return L; } return null; }
+function winner(b){ const L=winLineOf(b); return L ? b[L[0]] : 0; }
+const stones = b => { let n=0; for (let i=0;i<9;i++) if (b[i]) n++; return n; };
+const score = (w, ply) => w===O ? 10-ply : -(10-ply);   // ply = 盤上の石の数
+
+// ====================================================================
+// 探索（記録なし）：ノード数を数えるだけ。表示深さより下の「省略部分」にも使う
+// ====================================================================
+let nodeCount=0;
+function ab(b, ply, player, alpha, beta, prune){
+  nodeCount++;
+  const w=winner(b);
+  if (w) return score(w, ply);
+  if (ply===9) return 0;
+  const max = player===O;
+  let best = max ? -INF : INF;
+  for (let i=0;i<9;i++) if (!b[i]) {
+    b[i]=player;
+    const v=ab(b, ply+1, 3-player, alpha, beta, prune);
+    b[i]=0;
+    if (max){ if (v>best) best=v; if (best>alpha) alpha=best; }
+    else    { if (v<best) best=v; if (best<beta)  beta=best; }
+    if (prune && alpha>=beta) break;
+  }
+  return best;
+}
+function countNodes(b, player, prune){
+  const save=nodeCount; nodeCount=0;
+  ab(Int8Array.from(b), stones(b), player, -INF, INF, prune);
+  const n=nodeCount; nodeCount=save; return n;
+}
+
+// ====================================================================
+// 探索（フレーム録画）：表示深さ showDepth までのノードは1手ずつ記録する
+//   rows[d] = 深さ d の局面を展開したときの「子の一覧」（= スタックの1段）
+// ====================================================================
+let R=[], cutCount=0, dry=false, fc=0, rootPly=0;
+
+function cloneRow(r){ return {...r, st:r.st.slice(), val:r.val.slice(), cnt:r.cnt.slice()}; }
+function emit(op, desc, final){
+  fc++;
+  if (dry) return;
+  frames.push({ rows:R.slice(), op, desc, nodes:nodeCount, cuts:cutCount, depth:R.length-1, final:!!final });
+}
+const vtxt = v => v>=INF ? "+∞" : v<=-INF ? "−∞" : v>0 ? "+"+v : v<0 ? "−"+(-v) : "0";
+
+function rs(b, d, player, alpha, beta){     // 深さ d の局面（終局でない）を展開
+  const ply = rootPly + d;
+  nodeCount++;
+  const max = player===O;
+  const moves=[]; for (let i=0;i<9;i++) if (!b[i]) moves.push(i);
+  if (!dry){
+    R.length=d;
+    R[d]={ board:Int8Array.from(b), player, max, alpha, beta, moves,
+           st:moves.map(()=>UNV), val:moves.map(()=>null), cnt:moves.map(()=>0), best:-1 };
+  }
+  emit("展開", `深さ${d}：${SYM[player]}の手番（${max?"MAX":"MIN"}）。指せる手 ${moves.length} 個を並べる`);
+
+  let best = max ? -INF : INF, bestK=-1;
+  for (let k=0;k<moves.length;k++){
+    const m=moves[k];
+    if (!dry){
+      R.length=d+1;
+      const r=cloneRow(R[d]); r.st[k]=CUR; r.alpha=alpha; r.beta=beta; R[d]=r;
+    }
+    emit("試す", `深さ${d}：${SYM[player]}を「${CELL[m]}」に置いてみる`);
+    b[m]=player;
+    let v, cnt=0;
+    const w=winner(b);
+    if (w || ply+1===9){
+      nodeCount++;
+      v = w ? score(w, ply+1) : 0;
+    } else if (d+1<showDepth){
+      v = rs(b, d+1, 3-player, alpha, beta);
+    } else {
+      const n0=nodeCount;
+      v = ab(b, ply+1, 3-player, alpha, beta, usePrune);
+      cnt = nodeCount-n0;
+    }
+    b[m]=0;
+
+    const better = max ? v>best : v<best;
+    if (better){ best=v; bestK=k; }
+    if (max) alpha=Math.max(alpha,best); else beta=Math.min(beta,best);
+    const cut = usePrune && alpha>=beta && k<moves.length-1;
+    if (!dry){
+      R.length=d+1;
+      const r=cloneRow(R[d]);
+      r.st[k]=DONE; r.val[k]=v; r.cnt[k]=cnt; r.alpha=alpha; r.beta=beta; r.best=bestK;
+      if (cut) for (let j=k+1;j<moves.length;j++) r.st[j]=PRUNED;
+      R[d]=r;
+    }
+    if (cut) cutCount++;
+    const note = cut
+      ? `α=${vtxt(alpha)} ≧ β=${vtxt(beta)} → 残り ${moves.length-1-k} 手は読まない（✂ 枝刈り）`
+      : better ? `暫定の${max?"最大":"最小"}を更新：${vtxt(best)}`
+               : `${vtxt(best)} のまま（この手は改善しない）`;
+    emit(cut?"枝刈り":"評価", `深さ${d}：「${CELL[m]}」の評価値は ${vtxt(v)}。${note}`);
+    if (cut) break;
+  }
+  return best;
+}
+
+// 現在の局面から探索を録画する
+function think(commit){
+  stop();
+  const b=Int8Array.from(pos);
+  rootPly=stones(b);
+  usePrune = $("algo").value==="ab";
+  let d=Math.min(parseInt($("depth").value,10), 9-rootPly);
+  const want=d;
+  dry=true;
+  for (;;){                              // フレーム数が多すぎたら表示深さを下げる
+    showDepth=d;
+    R=[]; fc=0; nodeCount=0; cutCount=0;
+    rs(b, 0, turn, -INF, INF);
+    if (fc<=MAXF || d<=1) break;
+    d--;
+  }
+  dry=false;
+  showDepth=d;
+  $("depthNote").textContent = d<want
+    ? `※ フレーム数が多すぎるため、表示する深さを ${want} → ${d} に自動調整しました（それより深い部分は省略して数だけ数えます）。` : "";
+
+  frames=[]; R=[]; fc=0; nodeCount=0; cutCount=0;
+  rs(b, 0, turn, -INF, INF);
+  const root=R[0];
+  bestMove = root.moves[root.best];
+  const total=nodeCount;
+  emit("完了", `読み切り：最善手は「${CELL[bestMove]}」（評価値 ${vtxt(root.val[root.best])}）。${commit?"AI がこの手を指します":"ヒント：この手が最善です"}`, true);
+  frames.forEach(f=>f.total=total);
+
+  const other=countNodes(b, turn, !usePrune);
+  const mm = usePrune ? other : total, abn = usePrune ? total : other;
+  $("cmpMM").textContent = mm.toLocaleString();
+  $("cmpAB").textContent = abn.toLocaleString();
+  $("cmpRate").textContent = (100*(1-abn/mm)).toFixed(1)+" %";
+
+  aiPending = commit;
+  layoutCanvas();
+  cur=0;
+  $("progress").max=frames.length-1;
+  renderFrame(0);
+  timer=setTimeout(play, 300);
+}
+
+function idleFrames(msg){
+  stop();
+  frames=[{ rows:[], op:"待機", desc:msg, nodes:0, cuts:0, depth:0, final:false, total:null }];
+  showDepth=Math.min(showDepth,3);
+  cur=0; aiPending=false; bestMove=-1;
+  $("progress").max=0;
+  layoutCanvas();
+  $("depthNote").textContent="";
+  renderFrame(0);
+}
+
+// ====================================================================
+// 対戦
+// ====================================================================
+function newGame(){
+  stop();
+  pos=new Int8Array(9); turn=O; over=false; winLine=null; lastMove=-1;
+  human=parseInt($("side").value,10);
+  ["cmpMM","cmpAB","cmpRate"].forEach(k=>$(k).textContent="—");
+  if (turn!==human){ updateStatus(); renderBoard(); think(true); }
+  else { idleFrames("あなたの番です。升目をクリックするとAIがその後の局面を読み始めます（💡で自分の番の局面も読ませられます）。"); updateStatus(); renderBoard(); }
+}
+
+function place(i){
+  pos[i]=turn; lastMove=i;
+  const L=winLineOf(pos);
+  if (L){ over=true; winLine=L; }
+  else if (stones(pos)===9) over=true;
+  else turn=3-turn;
+  updateStatus(); renderBoard();
+  if (!over && turn!==human) think(true);
+}
+
+function onCell(i){
+  if (over || turn!==human || aiPending || pos[i]) return;
+  place(i);
+}
+
+function commitMove(){
+  aiPending=false;
+  if (bestMove>=0 && !over) place(bestMove);
+}
+
+function updateStatus(){
+  let s;
+  if (over){
+    const w=winner(pos);
+    s = !w ? "引き分け" : w===human ? `あなたの勝ち（${SYM[w]}）！` : `AI の勝ち（${SYM[w]}）`;
+  } else s = turn===human ? `あなたの番です（${SYM[turn]}）` : `AI が考え中…（${SYM[turn]}）`;
+  $("status").textContent=s;
+}
+
+function renderBoard(f){
+  const bd=$("board");
+  if (!bd.children.length){
+    for (let i=0;i<9;i++){
+      const c=document.createElement("button"); c.className="cell"; c.onclick=()=>onCell(i); bd.appendChild(c);
+    }
+  }
+  const row0 = f && f.rows[0], cand = row0 ? row0.moves[row0.st.indexOf(CUR)] : undefined;
+  const showBest = f && f.final && bestMove>=0 && !pos[bestMove];
+  for (let i=0;i<9;i++){
+    const c=bd.children[i];
+    c.textContent = pos[i] ? SYM[pos[i]] : "";
+    let cls="cell"+(pos[i]===O?" o":pos[i]===X?" x":"");
+    if (i===lastMove) cls+=" last";
+    if (winLine && winLine.includes(i)) cls+=" win";
+    if (cand===i && !pos[i] && !f.final) cls+=" cand";
+    if (showBest && i===bestMove) cls+=" best";
+    c.className=cls;
+    c.disabled = over || turn!==human || aiPending || !!pos[i];
+  }
+  $("hint").disabled = over || turn!==human || aiPending;
+}
+
+// ====================================================================
+// 描画
+// ====================================================================
+const ROW_H=80, LABEL_W=190, KID_X=200, KID_STEP=62, KS=46;
+function layoutCanvas(){
+  cv.height = Math.max(3,showDepth)*ROW_H + 10;
+}
+
+function drawMark(cx, cy, r, who, bold){
+  ctx.lineWidth = bold ? 2.8 : 1.8;
+  if (who===O){
+    ctx.strokeStyle="#2f7fd9"; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+  } else {
+    ctx.strokeStyle="#ff6b6b"; ctx.beginPath();
+    ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx+r,cy+r); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx-r,cy+r); ctx.stroke();
+  }
+}
+function drawMini(x, y, b, newCell, alpha){
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle="#ffffff"; ctx.fillRect(x,y,KS,KS);
+  ctx.strokeStyle="#b8c2d6"; ctx.lineWidth=1; ctx.beginPath();
+  for (let i=1;i<3;i++){
+    ctx.moveTo(x+i*KS/3,y+3); ctx.lineTo(x+i*KS/3,y+KS-3);
+    ctx.moveTo(x+3,y+i*KS/3); ctx.lineTo(x+KS-3,y+i*KS/3);
+  }
+  ctx.stroke();
+  const cs=KS/3;
+  for (let i=0;i<9;i++) if (b[i]){
+    drawMark(x+(i%3)*cs+cs/2, y+Math.floor(i/3)*cs+cs/2, cs*0.28, b[i], i===newCell);
+  }
+  ctx.globalAlpha=1;
+}
+function valColor(v){ return v>0 ? "#2f7fd9" : v<0 ? "#e04f4f" : "#5d6b82"; }
+
+function drawRow(r, d){
+  const y0=d*ROW_H+6;
+  if (d>0){ ctx.strokeStyle="#e1e6f0"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(6,y0-4); ctx.lineTo(cv.width-6,y0-4); ctx.stroke(); }
+  // 左：いま展開している局面
+  drawMini(10, y0+4, r.board, -1, 1);
+  ctx.strokeStyle="#9aa6bd"; ctx.lineWidth=1; ctx.strokeRect(10,y0+4,KS,KS);
+  ctx.fillStyle="#1a2030"; ctx.font="bold 12px sans-serif"; ctx.textAlign="left"; ctx.textBaseline="top";
+  ctx.fillText(`深さ ${d}`, 66, y0+4);
+  ctx.font="12px sans-serif"; ctx.fillStyle=r.player===O?"#2f7fd9":"#e04f4f";
+  ctx.fillText(`${SYM[r.player]}の手番 ${r.max?"MAX":"MIN"}`, 66, y0+21);
+  if (usePrune){
+    ctx.fillStyle="#5d6b82"; ctx.font="11px Consolas,monospace";
+    ctx.fillText(`α=${vtxt(r.alpha)} β=${vtxt(r.beta)}`, 66, y0+38);
+  }
+  // 右：子（指せる手）
+  for (let k=0;k<r.moves.length;k++){
+    const m=r.moves[k], x=KID_X+k*KID_STEP, y=y0+4, s=r.st[k];
+    const kb=Int8Array.from(r.board); kb[m]=r.player;
+    drawMini(x, y, kb, m, s===UNV ? 0.4 : s===PRUNED ? 0.3 : 1);
+    ctx.lineJoin="miter";
+    if (s===UNV){ ctx.setLineDash([3,3]); ctx.strokeStyle="rgba(120,140,175,0.6)"; ctx.lineWidth=1; ctx.strokeRect(x,y,KS,KS); ctx.setLineDash([]); }
+    else if (s===CUR){ ctx.strokeStyle="#ff6b6b"; ctx.lineWidth=3; ctx.strokeRect(x-1,y-1,KS+2,KS+2); }
+    else if (s===DONE){
+      if (k===r.best){ ctx.strokeStyle="#4ade80"; ctx.lineWidth=3; ctx.strokeRect(x-1,y-1,KS+2,KS+2); }
+      else { ctx.strokeStyle="#2f5d8a"; ctx.lineWidth=1.5; ctx.strokeRect(x,y,KS,KS); }
+    } else { ctx.strokeStyle="rgba(120,140,175,0.5)"; ctx.lineWidth=1; ctx.strokeRect(x,y,KS,KS); }
+    ctx.textAlign="center"; ctx.textBaseline="top";
+    if (s===DONE){
+      ctx.font="bold 13px Consolas,monospace"; ctx.fillStyle=valColor(r.val[k]);
+      ctx.fillText(vtxt(r.val[k]), x+KS/2, y+KS+3);
+      if (r.cnt[k]>0){ ctx.font="10px sans-serif"; ctx.fillStyle="#8a96ab"; ctx.fillText("…"+r.cnt[k].toLocaleString(), x+KS/2, y+KS+17); }
+    } else if (s===CUR){
+      ctx.font="bold 13px sans-serif"; ctx.fillStyle="#ff6b6b"; ctx.fillText("?", x+KS/2, y+KS+3);
+    } else if (s===PRUNED){
+      ctx.font="bold 20px sans-serif"; ctx.fillStyle="#8a96ab"; ctx.textBaseline="middle";
+      ctx.fillText("✂", x+KS/2, y+KS/2);
+    }
+  }
+}
+
+function renderFrame(i){
+  const f=frames[i];
+  ctx.fillStyle="#f7f9fc"; ctx.fillRect(0,0,cv.width,cv.height);
+  if (!f.rows.length){
+    ctx.fillStyle="#8a96ab"; ctx.font="14px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("ここにAIの探索（ゲーム木の読み）が表示されます", cv.width/2, cv.height/2);
+  }
+  f.rows.forEach((r,d)=>drawRow(r,d));
+
+  $("nodeCount").textContent = f.nodes.toLocaleString();
+  $("totalCount").textContent = f.total!=null ? f.total.toLocaleString() : "—";
+  $("depthNow").textContent = f.rows.length ? f.depth : 0;
+  $("cutCount").textContent = f.cuts;
+  $("descText").textContent = f.desc;
+  $("opbadge").textContent = f.op;
+
+  $("progress").value=i;
+  $("stepLabel").textContent=`${i} / ${frames.length-1}`;
+  $("prev").disabled = $("toStart").disabled = i<=0;
+  $("next").disabled = $("toEnd").disabled = i>=frames.length-1;
+  renderBoard(f);
+}
+
+function showInfo(){
+  const x=INFO[$("algo").value];
+  $("iOrder").textContent=x.order; $("iPrune").textContent=x.prune; $("iNote").textContent=x.note;
+}
+
+// ====================================================================
+// 制御
+// ====================================================================
+function goTo(i){
+  cur=Math.max(0,Math.min(frames.length-1,i));
+  renderFrame(cur);
+  if (cur>=frames.length-1){ stop(); if (aiPending) commitMove(); }
+}
+function play(){ if(playing){stop();return;} if(frames.length<2) return; if(cur>=frames.length-1) cur=0; playing=true; $("play").textContent="⏸ 一時停止"; tick(); }
+function tick(){
+  if(!playing) return;
+  const sp=parseInt($("speed").value,10), delay=520-sp*8;
+  const base = sp<45 ? 1 : Math.pow(2, Math.floor((sp-45)/4)+1);
+  const skip = Math.max(base, Math.ceil(frames.length*delay/15000));   // 長い探索は約15秒に収める
+  goTo(cur+skip);
+  if (playing) timer=setTimeout(tick, delay);
+}
+function stop(){ playing=false; clearTimeout(timer); $("play").textContent="▶ 再生"; }
+
+function onParam(){
+  showInfo();
+  if (aiPending) think(true);
+  else if (!over && turn===human) idleFrames("設定を変更しました。升目をクリックするか、💡で探索してください。");
+}
+$("algo").onchange = onParam;
+$("depth").onchange = onParam;
+$("side").onchange = newGame;
+$("newGame").onclick = newGame;
+$("hint").onclick = () => { if (!over && turn===human && !aiPending) think(false); };
+$("play").onclick = play;
+$("next").onclick = () => { stop(); goTo(cur+1); };
+$("prev").onclick = () => { stop(); goTo(cur-1); };
+$("toStart").onclick = () => { stop(); goTo(0); };
+$("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
+$("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowRight"){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if (e.key==="ArrowLeft"){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if (e.key===" "){ play(); e.preventDefault(); }
+  else if (e.key==="n"||e.key==="N"){ newGame(); }
+});
+
+showInfo();
+newGame();
+</script>
+</body>
+</html>
