@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPA 偏差値計算 — 平均・標準偏差から正規分布で位置を見る</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --me:#ff6b6b; --mean:#2f5d8a; --area:#4ade80; --warn:#ffd24a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); letter-spacing:.04em; }
+  .field .row { display:flex; gap:10px; align-items:center; }
+  input[type=number] { background:var(--panel2); color:var(--text); font-family:inherit;
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:15px; width:84px;
+    font-variant-numeric:tabular-nums; }
+  input[type=range] { width:170px; accent-color:var(--accent); }
+
+  .layout { display:grid; grid-template-columns:1fr 330px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  canvas { background:#f7f9fc; border-radius:8px; width:100%; display:block; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:10px; }
+  .legend i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:5px; vertical-align:-2px; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .big { text-align:center; padding:6px 0 12px; }
+  .big .num { font-size:54px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .big .lab { font-size:12px; color:var(--muted); }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  .formula { font-family:Consolas,Menlo,monospace; font-size:13px; background:var(--panel2);
+    border-radius:8px; padding:10px 12px; line-height:1.8; }
+  .warn { margin-top:12px; font-size:12.5px; background:#fff6d6; border:1px solid var(--warn);
+    border-radius:8px; padding:8px 10px; display:none; }
+  table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  th { background:var(--accent); color:#06122a; padding:5px 6px; font-weight:600; }
+  td { padding:4px 6px; text-align:center; border-bottom:1px solid var(--line); }
+  tr.cur td { background:#ffe3e3; font-weight:700; }
+  p.note { font-size:12.5px; color:var(--muted); margin:10px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GPA 偏差値計算</h1>
+  <span class="sub">自分の GPA・集団の平均・標準偏差 → 偏差値と上位◯％（正規分布を仮定）</span>
+</header>
+<div class="wrap">
+  <div class="controls">
+    <div class="field"><label>あなたの GPA（0.0〜4.0）</label>
+      <div class="row"><input type="number" id="gpa" min="0" max="4" step="0.01" value="3.20">
+      <input type="range" id="gpaR" min="0" max="4" step="0.01" value="3.20"></div></div>
+    <div class="field"><label>集団の平均 μ</label>
+      <div class="row"><input type="number" id="mu" min="0" max="4" step="0.01" value="2.60">
+      <input type="range" id="muR" min="0" max="4" step="0.01" value="2.60"></div></div>
+    <div class="field"><label>標準偏差 σ</label>
+      <div class="row"><input type="number" id="sd" min="0.05" max="2" step="0.01" value="0.60">
+      <input type="range" id="sdR" min="0.05" max="2" step="0.01" value="0.60"></div></div>
+  </div>
+
+  <div class="layout">
+    <div class="stage">
+      <canvas id="cv" width="1000" height="460"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--me)"></i>あなた</span>
+        <span><i style="background:var(--mean)"></i>平均（偏差値50）</span>
+        <span><i style="background:var(--area);opacity:.6"></i>あなた以下の人の割合</span>
+        <span>上軸：偏差値 ／ 下軸：GPA</span>
+      </div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <div class="big"><div class="num" id="dev">--</div><div class="lab">偏差値</div></div>
+        <div class="stats">
+          <div class="stat"><div class="num" id="z">--</div><div class="lab">z スコア</div></div>
+          <div class="stat"><div class="num" id="top">--</div><div class="lab">上位</div></div>
+          <div class="stat" style="grid-column:span 2"><div class="num" id="pct">--</div><div class="lab">パーセンタイル（下から）</div></div>
+        </div>
+        <div class="warn" id="warn"></div>
+      </div>
+      <div class="card">
+        <h3>計算式</h3>
+        <div class="formula" id="formula"></div>
+        <p class="note">偏差値は「平均を50、標準偏差を10」に直した値。平均より 1σ 上なら 60、2σ 上なら 70。</p>
+      </div>
+      <div class="card">
+        <h3>GPA 早見表</h3>
+        <table id="tbl"></table>
+      </div>
+    </div>
+  </div>
+  <p class="note">※正規分布を仮定した目安です。GPA は 0〜4 で頭打ちになり、実際の分布は高い側に偏ることが多いため、
+  上位◯％は実際の順位と一致しないことがあります（平均が端に近い・σ が大きいときは特に）。</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const C = {me:'#ff6b6b', mean:'#2f5d8a', area:'#4ade80', curve:'#2f7fd9', text:'#1a2030', muted:'#5d6b82', line:'#d6dce8'};
+
+// 標準正規分布の累積分布 Φ(z)（erf の Abramowitz-Stegun 近似, 誤差 ~1e-7）
+function erf(x){
+  const s = x<0?-1:1; x=Math.abs(x);
+  const t = 1/(1+0.3275911*x);
+  const y = 1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+  return s*y;
+}
+const Phi = z => 0.5*(1+erf(z/Math.SQRT2));
+const pdf = (x,mu,sd) => Math.exp(-0.5*((x-mu)/sd)**2)/(sd*Math.sqrt(2*Math.PI));
+const dev = (x,mu,sd) => 50+10*(x-mu)/sd;
+
+function val(id, lo, hi){ let v = parseFloat($(id).value); if(!isFinite(v)) v = lo; return Math.min(hi, Math.max(lo, v)); }
+
+function draw(gpa, mu, sd){
+  const cv = $('cv'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.clearRect(0,0,W,H);
+  const L=50, R=W-30, T=62, B=H-52;
+  const X = x => L + (x/4)*(R-L);
+  const peak = pdf(mu,mu,sd);
+  const ymax = Math.max(peak, 0.5)*1.12;
+  const Y = p => B - (p/ymax)*(B-T);
+
+  // 面積（あなた以下）
+  g.beginPath(); g.moveTo(X(0),B);
+  const N = 400;
+  for(let i=0;i<=N;i++){ const x = Math.min(gpa, 4)*i/N; g.lineTo(X(x), Y(pdf(x,mu,sd))); }
+  g.lineTo(X(gpa),B); g.closePath();
+  g.fillStyle='rgba(74,222,128,.45)'; g.fill();
+
+  // 曲線
+  g.beginPath();
+  for(let i=0;i<=N;i++){ const x=4*i/N, px=X(x), py=Y(pdf(x,mu,sd)); i?g.lineTo(px,py):g.moveTo(px,py); }
+  g.strokeStyle=C.curve; g.lineWidth=3; g.stroke();
+
+  // 下軸 GPA
+  g.strokeStyle=C.line; g.lineWidth=1; g.beginPath(); g.moveTo(L,B); g.lineTo(R,B); g.stroke();
+  g.fillStyle=C.muted; g.font='16px sans-serif'; g.textAlign='center';
+  for(let v=0; v<=4.001; v+=0.5){ const px=X(v);
+    g.beginPath(); g.moveTo(px,B); g.lineTo(px,B+6); g.stroke(); g.fillText(v.toFixed(1),px,B+26); }
+  g.fillText('GPA',(L+R)/2,B+46);
+
+  // 上軸 偏差値（10刻みで範囲内のもの）
+  g.strokeStyle=C.line; g.beginPath(); g.moveTo(L,T-14); g.lineTo(R,T-14); g.stroke();
+  for(let d=0; d<=100; d+=10){
+    const x = mu + (d-50)/10*sd; if(x<0||x>4) continue;
+    const px=X(x);
+    g.beginPath(); g.moveTo(px,T-14); g.lineTo(px,T-8); g.stroke();
+    g.fillStyle = d===50?C.mean:C.muted; g.fillText(d,px,T-20);
+  }
+  g.textAlign='left'; g.fillStyle=C.muted; g.fillText('偏差値',4,T-20);
+
+  // 平均線
+  if(mu>=0&&mu<=4){
+    g.setLineDash([6,5]); g.strokeStyle=C.mean; g.lineWidth=2;
+    g.beginPath(); g.moveTo(X(mu),T-14); g.lineTo(X(mu),B); g.stroke(); g.setLineDash([]);
+  }
+  // 自分
+  const px=X(gpa);
+  g.strokeStyle=C.me; g.lineWidth=3; g.beginPath(); g.moveTo(px,T-14); g.lineTo(px,B); g.stroke();
+  g.fillStyle=C.me; g.beginPath(); g.arc(px,Y(pdf(gpa,mu,sd)),7,0,7); g.fill();
+  const label = 'GPA '+gpa.toFixed(2)+' → '+dev(gpa,mu,sd).toFixed(1);
+  g.font='bold 17px sans-serif'; const tw=g.measureText(label).width;
+  const right = px+tw+16 < W-10;
+  g.textAlign = right?'left':'right'; g.fillStyle=C.me;
+  g.fillText(label, right?px+10:px-10, T+16);
+}
+
+function update(src){
+  // number と range を同期
+  for(const k of ['gpa','mu','sd']){
+    if(src===k) $(k+'R').value=$(k).value; else if(src===k+'R') $(k).value=$(k+'R').value;
+  }
+  const gpa=val('gpa',0,4), mu=val('mu',0,4), sd=val('sd',0.05,2);
+  const z=(gpa-mu)/sd, d=50+10*z, p=Phi(z)*100;
+  $('dev').textContent=d.toFixed(1);
+  $('z').textContent=(z>=0?'+':'')+z.toFixed(2);
+  $('top').textContent=(100-p).toFixed(1)+'%';
+  $('pct').textContent=p.toFixed(1)+' %';
+  $('formula').innerHTML =
+    'z = (x − μ) / σ<br>&nbsp;&nbsp;= ('+gpa.toFixed(2)+' − '+mu.toFixed(2)+') / '+sd.toFixed(2)+' = '+z.toFixed(2)+'<br>'+
+    '偏差値 = 50 + 10 × z = <b>'+d.toFixed(1)+'</b>';
+
+  // 正規分布が [0,4] からはみ出す割合の警告
+  const out = (Phi((0-mu)/sd) + 1-Phi((4-mu)/sd))*100;
+  const w=$('warn'); const msgs=[];
+  if(out>5) msgs.push('この平均・σ では正規分布の約'+out.toFixed(0)+'%が 0〜4 の範囲外にはみ出します。GPA には上限・下限があるため、偏差値は参考程度に。');
+  if(d>100||d<0) msgs.push('偏差値が 0〜100 を超えています（外れ値）。');
+  w.style.display=msgs.length?'block':'none'; w.innerHTML=msgs.join('<br>');
+
+  // 早見表
+  let h='<tr><th>GPA</th><th>偏差値</th><th>上位</th></tr>';
+  const rows=[4.0,3.5,3.0,2.5,2.0,1.5,1.0]; if(!rows.some(r=>Math.abs(r-gpa)<0.005)) rows.push(gpa);
+  rows.sort((a,b)=>b-a).forEach(x=>{
+    const zz=(x-mu)/sd;
+    h+='<tr'+(Math.abs(x-gpa)<0.005?' class="cur"':'')+'><td>'+x.toFixed(2)+'</td><td>'+(50+10*zz).toFixed(1)+'</td><td>'+(100-Phi(zz)*100).toFixed(1)+'%</td></tr>';
+  });
+  $('tbl').innerHTML=h;
+  draw(gpa,mu,sd);
+}
+
+for(const k of ['gpa','mu','sd']){
+  $(k).addEventListener('input',()=>update(k));
+  $(k+'R').addEventListener('input',()=>update(k+'R'));
+}
+update();
+</script>
+</body>
+</html>
