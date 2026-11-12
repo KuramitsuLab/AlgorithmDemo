@@ -55,6 +55,14 @@
   th { background:var(--accent); color:#06122a; padding:5px 6px; font-weight:600; }
   td { padding:4px 6px; text-align:center; border-bottom:1px solid var(--line); }
   tr.cur td { background:#ffe3e3; font-weight:700; }
+  .ci { margin-top:12px; font-size:13px; background:var(--panel2); border-radius:8px; padding:10px 12px; text-align:center; }
+  .ci b { color:var(--me); font-size:17px; font-variant-numeric:tabular-nums; }
+  .chk { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:5px; }
+  .explain h3 { margin-top:14px; }
+  .explain h3:first-child { margin-top:0; }
+  .explain p, .explain li { font-size:13px; margin:6px 0; }
+  .explain ul { padding-left:20px; margin:6px 0; }
+  .explain code { font-family:Consolas,Menlo,monospace; background:var(--panel2); padding:1px 5px; border-radius:4px; }
   p.note { font-size:12.5px; color:var(--muted); margin:10px 0 0; }
 </style>
 </head>
@@ -74,6 +82,9 @@
     <div class="field"><label>標準偏差 σ</label>
       <div class="row"><input type="number" id="sd" min="0.05" max="2" step="0.01" value="0.60">
       <input type="range" id="sdR" min="0.05" max="2" step="0.01" value="0.60"></div></div>
+    <div class="field"><label>標本人数 n（平均・σ を出した人数）</label>
+      <div class="row"><input type="number" id="n" min="2" max="100000" step="1" value="50">
+      <label class="chk"><input type="checkbox" id="all">全員のデータ（誤差なし）</label></div></div>
   </div>
 
   <div class="layout">
@@ -83,6 +94,7 @@
         <span><i style="background:var(--me)"></i>あなた</span>
         <span><i style="background:var(--mean)"></i>平均（偏差値50）</span>
         <span><i style="background:var(--area);opacity:.6"></i>あなた以下の人の割合</span>
+        <span><i style="background:var(--me);height:4px;vertical-align:2px"></i>偏差値の95%信頼区間</span>
         <span>上軸：偏差値 ／ 下軸：GPA</span>
       </div>
     </div>
@@ -94,6 +106,7 @@
           <div class="stat"><div class="num" id="top">--</div><div class="lab">上位</div></div>
           <div class="stat" style="grid-column:span 2"><div class="num" id="pct">--</div><div class="lab">パーセンタイル（下から）</div></div>
         </div>
+        <div class="ci" id="ci"></div>
         <div class="warn" id="warn"></div>
       </div>
       <div class="card">
@@ -107,6 +120,29 @@
       </div>
     </div>
   </div>
+  <div class="card explain" style="margin-top:18px">
+    <h3>信頼区間とは？</h3>
+    <p>平均 μ や標準偏差 σ を <b>n 人の標本</b>から求めた場合、それは本当の値（母集団の値）の「推定値」にすぎず、別の n 人を選べば少し変わります。
+    その結果、偏差値にも<b>誤差</b>が生じます。信頼区間は「本当の偏差値はおそらくこの範囲にある」という幅です。</p>
+    <p><b>95%信頼区間</b>とは、同じ方法で何度も標本を取り直して区間を作ると、そのうち約95%の区間が本当の値を含む、という意味です
+    （「この区間に本当の値が95%の確率で入る」と言い切るのは厳密には不正確です）。</p>
+    <h3>計算方法（近似）</h3>
+    <ul>
+      <li>平均の誤差による偏差値の標準誤差：<code>10 / √n</code></li>
+      <li>σ の誤差による標準誤差：<code>10·|z| / √(2(n−1))</code></li>
+      <li>合成：<code>SE = √( (10/√n)² + (10·z)²/(2(n−1)) )</code></li>
+      <li>95%信頼区間：<code>偏差値 ± 1.96 × SE</code></li>
+    </ul>
+    <h3>読み方のコツ</h3>
+    <ul>
+      <li><b>n が大きいほど区間は狭く</b>なります（√n に反比例。精度を2倍にするには人数が4倍必要）。</li>
+      <li><b>平均から離れた人ほど区間は広く</b>なります（σ の誤差が効くため）。</li>
+      <li>2人の区間が<b>重なっていれば</b>、偏差値の差は誤差の範囲かもしれません。</li>
+      <li>全員のデータが分かっている場合は μ・σ は確定値なので、誤差なし（チェックを入れる）。</li>
+    </ul>
+    <p class="note">正規分布・標本が無作為抽出であることを仮定した近似です。小さい n では実際の誤差はもう少し大きくなります。</p>
+  </div>
+
   <p class="note">※正規分布を仮定した目安です。GPA は 0〜4 で頭打ちになり、実際の分布は高い側に偏ることが多いため、
   上位◯％は実際の順位と一致しないことがあります（平均が端に近い・σ が大きいときは特に）。</p>
 </div>
@@ -128,7 +164,7 @@ const dev = (x,mu,sd) => 50+10*(x-mu)/sd;
 
 function val(id, lo, hi){ let v = parseFloat($(id).value); if(!isFinite(v)) v = lo; return Math.min(hi, Math.max(lo, v)); }
 
-function draw(gpa, mu, sd){
+function draw(gpa, mu, sd, ci){
   const cv = $('cv'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
   g.clearRect(0,0,W,H);
   const L=50, R=W-30, T=62, B=H-52;
@@ -180,6 +216,20 @@ function draw(gpa, mu, sd){
   const right = px+tw+16 < W-10;
   g.textAlign = right?'left':'right'; g.fillStyle=C.me;
   g.fillText(label, right?px+10:px-10, T+16);
+
+  // 偏差値の信頼区間（GPA 軸上に換算して横バーで表示）
+  if(ci){
+    const toX = d => mu + (d-50)/10*sd;
+    const a = Math.max(0,Math.min(4,toX(ci[0]))), b = Math.max(0,Math.min(4,toX(ci[1])));
+    const y = T+44;
+    g.strokeStyle=C.me; g.lineWidth=5; g.lineCap='round';
+    g.beginPath(); g.moveTo(X(a),y); g.lineTo(X(b),y); g.stroke();
+    g.lineWidth=3; g.lineCap='butt';
+    for(const v of [a,b]){ g.beginPath(); g.moveTo(X(v),y-9); g.lineTo(X(v),y+9); g.stroke(); }
+    g.font='14px sans-serif'; g.fillStyle=C.me;
+    g.textAlign = right?'left':'right';
+    g.fillText('95%CI '+ci[0].toFixed(1)+' – '+ci[1].toFixed(1), right?px+10:px-10, y+28);
+  }
 }
 
 function update(src){
@@ -189,6 +239,16 @@ function update(src){
   }
   const gpa=val('gpa',0,4), mu=val('mu',0,4), sd=val('sd',0.05,2);
   const z=(gpa-mu)/sd, d=50+10*z, p=Phi(z)*100;
+  const full=$('all').checked; $('n').disabled=full;
+  let n=Math.round(parseFloat($('n').value)); if(!isFinite(n)||n<2) n=2;
+  let ci=null;
+  if(full){
+    $('ci').innerHTML='全員のデータなので μ・σ は確定値。<b>誤差なし</b>（信頼区間は不要）';
+  } else {
+    const se=Math.sqrt((10/Math.sqrt(n))**2+(10*z)**2/(2*(n-1)));
+    const h=1.96*se; ci=[d-h,d+h];
+    $('ci').innerHTML='n = '+n+' 人 → 偏差値の95%信頼区間<br><b>'+ci[0].toFixed(1)+' 〜 '+ci[1].toFixed(1)+'</b>　（'+d.toFixed(1)+' ± '+h.toFixed(1)+'）';
+  }
   $('dev').textContent=d.toFixed(1);
   $('z').textContent=(z>=0?'+':'')+z.toFixed(2);
   $('top').textContent=(100-p).toFixed(1)+'%';
@@ -212,13 +272,15 @@ function update(src){
     h+='<tr'+(Math.abs(x-gpa)<0.005?' class="cur"':'')+'><td>'+x.toFixed(2)+'</td><td>'+(50+10*zz).toFixed(1)+'</td><td>'+(100-Phi(zz)*100).toFixed(1)+'%</td></tr>';
   });
   $('tbl').innerHTML=h;
-  draw(gpa,mu,sd);
+  draw(gpa,mu,sd,ci);
 }
 
 for(const k of ['gpa','mu','sd']){
   $(k).addEventListener('input',()=>update(k));
   $(k+'R').addEventListener('input',()=>update(k+'R'));
 }
+$('n').addEventListener('input',()=>update('n'));
+$('all').addEventListener('change',()=>update('all'));
 update();
 </script>
 </body>
