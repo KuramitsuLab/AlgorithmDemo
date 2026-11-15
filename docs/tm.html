@@ -236,7 +236,7 @@
       <tr><td>INC [n] / DEC [n] / NEG</td><td>レジスタを +n／−n（既定 1）／符号反転</td></tr>
       <tr><td>JUMP ラベル</td><td>無条件ジャンプ（行番号も可）</td></tr>
       <tr><td>IFZERO / IFNEG ラベル</td><td>レジスタが 0／負なら、そのラベルへジャンプ</td></tr>
-      <tr><td>CALL ラベル / RET</td><td>サブルーチン呼び出し（ヘッド位置が新しい M[0]）／呼び出し元へ復帰</td></tr>
+      <tr><td>CALL ラベル / RET</td><td>サブルーチン呼び出し（ヘッド位置が新しい M[0]）／呼び出し元へ復帰。<code>CALL</code> なしの <code>RET</code> はプログラム終了</td></tr>
     </table>
     <p class="note">足し算は「INC を B 回くり返す」、掛け算は「足し算を B 回くり返す」…と、<b>ごく小さな命令の組み合わせから複雑な計算が作れる</b>。1 回の実行は最大 20000 ステップまで。</p>
   </div>
@@ -1046,7 +1046,7 @@ async function execOne(lines, labels) {
     }
     case 'RET': {
       const r = tm.ret();
-      if (r === null) { say(`行${pc + 1}: コールスタックが空です（CALL していないのに RET）`, true); return 'error'; }
+      if (r === null) return 'end';                         // 呼び出し元がない RET ＝ プログラム終了
       next = r;
       break;
     }
