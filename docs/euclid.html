@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ユークリッドの互除法（引き算版）— 引いて引いて最大公約数</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --frontier:#ffd24a; --current:#ff6b6b; --path:#4ade80; --goal:#c084fc; --visited:#2f5d8a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select, input[type=number] { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; width:90px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  button.small { padding:6px 10px; font-size:12px; }
+  .spacer { flex:1; }
+  .tabs { display:flex; gap:0; }
+  .tabs button { border-radius:0; border-right-width:0; }
+  .tabs button:first-child { border-radius:8px 0 0 8px; }
+  .tabs button:last-child { border-radius:0 8px 8px 0; border-right-width:1px; }
+  .tabs button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .presets { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:12px; color:var(--muted); }
+
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:4px; min-height:44px; font-size:15px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .desc .badge.sub { background:var(--current); color:#fff; border-color:var(--current); }
+  .desc .badge.done { background:var(--path); color:#06122a; border-color:var(--path); }
+  .desc .badge.init { background:var(--frontier); color:#06122a; border-color:var(--frontier); }
+
+  #tokens { align-self:stretch; background:#f7f9fc; border-radius:8px; padding:14px; min-height:260px; }
+  .trow { margin-bottom:16px; }
+  .trow .tl { font-weight:700; font-size:15px; margin-bottom:6px; font-variant-numeric:tabular-nums; }
+  .trow .tl.a { color:var(--accent); } .trow .tl.b { color:#9b5de0; }
+  .tk { display:inline-flex; align-items:center; justify-content:center; width:var(--tk,34px); height:var(--tk,34px);
+    margin:2px; border-radius:6px; font-size:var(--tkf,22px); border:2px solid transparent; transition:all .15s; }
+  .tk.alive { background:#fff; border-color:var(--line); }
+  .tk.alive.a { border-color:#9cc3f0; } .tk.alive.b { border-color:#d9b8f7; }
+  .tk.gone { border:2px solid var(--current); background:#ffe9e9; opacity:.6; }
+  .tk.empty { border:2px dashed var(--line); }
+  .tk.empty::after { content:""; }
+  .tk.fin { border-color:var(--path); background:#e6fbee; }
+  .msg { color:var(--muted); font-size:14px; padding:30px 10px; text-align:center; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  pre.code { margin:0; font-family:Consolas,monospace; font-size:13px; line-height:1.7; }
+  pre.code span { display:block; padding:0 6px; border-radius:5px; }
+  pre.code span.hl { background:#fff3c4; outline:1px solid var(--frontier); }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+  #log { max-height:210px; overflow-y:auto; font-family:Consolas,monospace; font-size:12.5px; }
+  #log div { padding:2px 6px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  #log div:hover { background:var(--panel2); }
+  #log div.cur { background:#ffe9e9; outline:1px solid var(--current); }
+  #log div.fin { background:#e6fbee; outline:1px solid var(--path); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:3px; display:inline-block; flex:none; border:1px solid #0008; }
+
+  .playbar { flex-basis:100%; border-top:1px solid var(--line); padding-top:14px;
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .playbar input[type=range] { flex:1; min-width:160px; accent-color:var(--accent); }
+  #stepLabel { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; min-width:80px; text-align:right; }
+  .speed { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .speed input { width:90px; accent-color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ユークリッドの互除法（引き算版）</h1>
+  <span class="sub">A = B なら答え。A &gt; B なら A ← A − B、A &lt; B なら B ← B − A。引き続けると最大公約数が残る</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field"><label>A の初期値</label><input type="number" id="inA" min="1" max="9999" value="48"></div>
+    <div class="field"><label>B の初期値</label><input type="number" id="inB" min="1" max="9999" value="18"></div>
+    <button class="primary" id="btnSet">この値で開始</button>
+    <div class="field"><label>表示</label>
+      <div class="tabs" id="tabs">
+        <button data-v="bar" class="on">横棒グラフ</button>
+        <button data-v="tok">トークン</button>
+        <button data-v="rect">長方形</button>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="speed"><label for="speed">速度</label><input type="range" id="speed" min="1" max="10" value="4"></div>
+    <div class="playbar">
+      <button id="bFirst">⏮</button>
+      <button id="bPrev">◀ 戻る</button>
+      <button id="bPlay" class="primary">▶ 再生</button>
+      <button id="bNext">次へ ▶</button>
+      <button id="bLast">⏭</button>
+      <input type="range" id="progress" min="0" max="0" value="0">
+      <span id="stepLabel">0 / 0</span>
+    </div>
+  </div>
+
+
+
+  <div class="presets">例：
+    <button class="small" data-a="48" data-b="18">48, 18</button>
+    <button class="small" data-a="21" data-b="13">21, 13（フィボナッチ）</button>
+    <button class="small" data-a="36" data-b="24">36, 24</button>
+    <button class="small" data-a="17" data-b="5">17, 5（互いに素）</button>
+    <button class="small" data-a="12" data-b="12">12, 12</button>
+    <button class="small" data-a="120" data-b="45">120, 45</button>
+    <button class="small" data-a="200" data-b="3">200, 3（遅い例）</button>
+    <button class="small" data-a="6215" data-b="4746">6215, 4746</button>
+  </div>
+
+  <div class="layout">
+    <div class="stage">
+      <canvas id="cv" width="760" height="300"></canvas>
+      <div id="tokens" style="display:none"></div>
+      <div class="desc"><span class="badge" id="badge"></span><span id="desc"></span></div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>現在の状態</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="sA" style="color:var(--accent)">-</div><div class="lab">A</div></div>
+          <div class="stat"><div class="num" id="sB" style="color:#9b5de0">-</div><div class="lab">B</div></div>
+          <div class="stat"><div class="num" id="sN">0</div><div class="lab">引き算の回数</div></div>
+          <div class="stat"><div class="num" id="sG">?</div><div class="lab">最大公約数</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>アルゴリズム</h3>
+<pre class="code" id="code"><span data-l="w">while A != B:</span><span data-l="if">    if A &gt; B:</span><span data-l="a">        A = A - B</span><span data-l="el">    else:</span><span data-l="b">        B = B - A</span><span data-l="r">答え = A   # = B</span></pre>
+        <div class="note">割り算（余り）を使わず、引き算だけで最大公約数が求まる。</div>
+      </div>
+      <div class="card">
+        <h3>ステップ一覧（クリックでジャンプ）</h3>
+        <div id="log"></div>
+      </div>
+      <div class="card">
+        <h3>凡例</h3>
+        <div class="legend">
+          <span><i style="background:#2f7fd9"></i>A</span>
+          <span><i style="background:#c084fc"></i>B</span>
+          <span><i style="background:#ff6b6b"></i>今回引いた分</span>
+          <span><i style="background:#4ade80"></i>答え（gcd）</span>
+        </div>
+        <div class="note">長方形版：A×B の長方形から、短い辺を一辺とする正方形を切り落としていく。最後に残る正方形の一辺が gcd。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const COL = { A:'#2f7fd9', B:'#c084fc', red:'#ff6b6b', green:'#4ade80', line:'#d6dce8', text:'#1a2030', muted:'#5d6b82' };
+
+let frames = [], cur = 0, timer = null, view = 'bar', A0 = 48, B0 = 18;
+
+/* ---- フレーム録画：1回の引き算ごとにスナップショット ---- */
+function build(A, B){
+  const fr = [{ a:A, b:B, t:'init', k:0 }];
+  let a = A, b = B, ox = 0, oy = 0, k = 0;
+  while (a !== b){
+    k++;
+    if (a > b){          // A = A - B  → 左端から b×b の正方形を切り落とす
+      fr.push({ t:'subA', k, from:a, amt:b, a:a-b, b, sq:{x:ox, y:oy, s:b} });
+      ox += b; a -= b;
+    } else {             // B = B - A  → 上端から a×a の正方形を切り落とす
+      fr.push({ t:'subB', k, from:b, amt:a, a, b:b-a, sq:{x:ox, y:oy, s:a} });
+      oy += a; b -= a;
+    }
+    const f = fr[fr.length-1]; f.ox = ox; f.oy = oy;
+  }
+  fr[0].ox = 0; fr[0].oy = 0;
+  return fr;
+}
+
+function rebuild(){
+  stop();
+  A0 = Math.max(1, Math.min(9999, parseInt($('inA').value) || 1));
+  B0 = Math.max(1, Math.min(9999, parseInt($('inB').value) || 1));
+  $('inA').value = A0; $('inB').value = B0;
+  frames = build(A0, B0);
+  cur = 0;
+  $('progress').max = frames.length - 1;
+  // ステップ一覧
+  const lg = $('log'); lg.innerHTML = '';
+  frames.forEach((f, i) => {
+    const d = document.createElement('div');
+    d.dataset.i = i;
+    if (i === 0) d.textContent = `開始  A=${A0}, B=${B0}`;
+    else if (f.t === 'subA') d.textContent = `${f.k}. A: ${f.from} − ${f.amt} = ${f.a}`;
+    else d.textContent = `${f.k}. B: ${f.from} − ${f.amt} = ${f.b}`;
+    d.onclick = () => { stop(); goTo(i); };
+    lg.appendChild(d);
+  });
+  const dn = document.createElement('div'); dn.dataset.i = 'done';
+  dn.textContent = `A = B = ${frames[frames.length-1].a}  → 答え`; dn.className = 'fin';
+  dn.onclick = () => { stop(); goTo(frames.length-1); };
+  lg.appendChild(dn);
+  renderFrame(0);
+}
+
+/* ---- 描画 ---- */
+function renderFrame(i){
+  cur = i;
+  const f = frames[i], last = i === frames.length - 1, g = frames[frames.length-1].a;
+  $('progress').value = i;
+  $('stepLabel').textContent = `${i} / ${frames.length-1}`;
+  $('sA').textContent = f.a; $('sB').textContent = f.b;
+  $('sN').textContent = f.k; $('sG').textContent = last ? g : '?';
+  $('sG').style.color = last ? '#1f9d55' : '';
+
+  // 説明
+  let badge, cls, txt;
+  if (i === 0 && !last){ badge='開始'; cls='init'; txt=`A=${f.a}, B=${f.b}。A ≠ B なので、大きい方から小さい方を引く。`; }
+  else if (i === 0){ badge='終了'; cls='done'; txt=`A = B = ${f.a}。最初から等しいので、答えは ${f.a}。`; }
+  else {
+    cls = last ? 'done' : 'sub'; badge = `${f.k} 回目`;
+    txt = f.t === 'subA' ? `A(${f.from}) > B(${f.amt}) なので A = ${f.from} − ${f.amt} = ${f.a}` :
+                           `A(${f.amt}) < B(${f.from}) なので B = ${f.from} − ${f.amt} = ${f.b}`;
+    if (last) txt += `　→ A = B = ${g}。答え（最大公約数）は ${g}`;
+  }
+  $('badge').className = 'badge ' + cls; $('badge').textContent = badge; $('desc').textContent = txt;
+
+  // コードのハイライト
+  document.querySelectorAll('#code span').forEach(s => s.classList.remove('hl'));
+  let hl = last ? 'r' : (i === 0 ? 'w' : '');
+  if (!last && i > 0) hl = f.t === 'subA' ? 'a' : 'b';
+  if (hl) document.querySelector(`#code span[data-l="${hl}"]`).classList.add('hl');
+  if (last && i > 0) document.querySelector('#code span[data-l="r"]').classList.add('hl');
+
+  // ログのハイライト
+  const lg = $('log');
+  lg.querySelectorAll('div').forEach(d => d.classList.remove('cur'));
+  if (last) lg.querySelector('div[data-i="done"]').classList.add('cur');
+  const el = lg.querySelector(`div[data-i="${i}"]`);
+  if (el){ el.classList.add('cur');
+    lg.scrollTop = Math.max(0, el.offsetTop - lg.offsetTop - lg.clientHeight/2); }
+
+  const isTok = view === 'tok';
+  cv.style.display = isTok ? 'none' : '';
+  $('tokens').style.display = isTok ? '' : 'none';
+  if (view === 'bar') drawBars(f, last, g);
+  else if (view === 'rect') drawRect(i, f, last, g);
+  else drawTokens(f, last);
+}
+
+function drawBars(f, last, g){
+  cv.height = 300;
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const L = 60, R = 24, mx = Math.max(A0, B0), sc = (W - L - R) / mx;
+  const rows = [{ n:'A', v:f.a, c:COL.A, y:60 }, { n:'B', v:f.b, c:COL.B, y:170 }];
+  const bh = 56;
+  // 目盛
+  const unit = sc >= 7 ? 1 : (sc >= 3 ? 5 : (sc >= 1.2 ? 10 : 50));
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  for (let v = 0; v <= mx; v += unit){
+    const x = L + v * sc;
+    ctx.strokeStyle = '#e3e8f1'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 30); ctx.lineTo(x, 250); ctx.stroke();
+    if (unit > 1 || v % 5 === 0 || sc >= 14){ ctx.fillStyle = COL.muted; ctx.fillText(v, x, 268); }
+  }
+  // 初期長さのうすい輪郭
+  rows.forEach((r, idx) => {
+    const init = idx === 0 ? A0 : B0;
+    ctx.strokeStyle = '#c3cbd9'; ctx.setLineDash([4,3]); ctx.lineWidth = 1;
+    ctx.strokeRect(L + .5, r.y + .5, init * sc, bh); ctx.setLineDash([]);
+  });
+  const subIdx = f.t === 'subA' ? 0 : (f.t === 'subB' ? 1 : -1);
+  rows.forEach((r, idx) => {
+    const w = r.v * sc;
+    ctx.fillStyle = last ? COL.green : r.c;
+    ctx.fillRect(L, r.y, w, bh);
+    // 目盛線（単位）
+    if (sc >= 7){ ctx.strokeStyle = '#ffffff99'; ctx.lineWidth = 1;
+      for (let v = 1; v < r.v; v++){ ctx.beginPath(); ctx.moveTo(L + v*sc, r.y); ctx.lineTo(L + v*sc, r.y + bh); ctx.stroke(); } }
+    // 今回引いた分
+    if (idx === subIdx){
+      const x0 = L + w, ww = f.amt * sc;
+      ctx.fillStyle = '#ff6b6b55'; ctx.fillRect(x0, r.y, ww, bh);
+      ctx.strokeStyle = COL.red; ctx.lineWidth = 2; ctx.setLineDash([5,3]);
+      ctx.strokeRect(x0 + 1, r.y + 1, ww - 2, bh - 2); ctx.setLineDash([]);
+      ctx.fillStyle = COL.red; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(`− ${f.amt}`, x0 + ww/2, r.y - 8);
+    }
+    // ラベル
+    ctx.fillStyle = r.c; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(r.n, L - 12, r.y + bh/2 + 7);
+    if (w > 34){ ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(r.v, L + w/2, r.y + bh/2 + 6); }
+    else { ctx.fillStyle = r.c; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(r.v, L + w + 6, r.y + bh/2 + 6); }
+  });
+  // 引いた長さ＝相手の長さ の対応線
+  if (subIdx >= 0){
+    const other = subIdx === 0 ? rows[1] : rows[0], me = rows[subIdx];
+    const x1 = L + other.v * sc;
+    ctx.strokeStyle = COL.red; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x1, Math.min(me.y, other.y) + bh); ctx.lineTo(x1, Math.max(me.y, other.y)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (last){ ctx.fillStyle = '#1f9d55'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`A = B = ${g}  ← 最大公約数`, L, 22); }
+}
+
+function drawRect(i, f, last, g){
+  cv.height = 420;
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const M = 36, sc = Math.min((W - M - 20) / A0, (H - M - 20) / B0);
+  const X = M, Y = M;
+  // 元の長方形
+  ctx.fillStyle = '#fff'; ctx.fillRect(X, Y, A0*sc, B0*sc);
+  // 切り落とした正方形
+  for (let j = 1; j <= i; j++){
+    const q = frames[j].sq; if (!q) continue;
+    const isCur = j === i && !last;
+    ctx.fillStyle = isCur ? '#ffd0d0' : (frames[j].t === 'subA' ? '#cfe2f8' : '#e9d6fb');
+    ctx.fillRect(X + q.x*sc, Y + q.y*sc, q.s*sc, q.s*sc);
+    ctx.strokeStyle = isCur ? COL.red : '#8aa0bd'; ctx.lineWidth = isCur ? 3 : 1.5;
+    ctx.strokeRect(X + q.x*sc, Y + q.y*sc, q.s*sc, q.s*sc);
+    if (q.s*sc >= 26){
+      ctx.fillStyle = isCur ? COL.red : COL.muted; ctx.font = `${Math.min(18, q.s*sc/2.5)}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`${q.s}×${q.s}`, X + (q.x + q.s/2)*sc, Y + (q.y + q.s/2)*sc - (q.s*sc>=40 ? 8 : 0));
+      if (q.s*sc >= 40){ ctx.font = '11px sans-serif'; ctx.fillText(`${j}回目`, X + (q.x + q.s/2)*sc, Y + (q.y + q.s/2)*sc + 10); }
+      ctx.textBaseline = 'alphabetic';
+    }
+  }
+  // 残りの長方形
+  const ox = i === 0 ? 0 : f.ox, oy = i === 0 ? 0 : f.oy;
+  const rx = X + ox*sc, ry = Y + oy*sc;
+  if (last){ ctx.fillStyle = '#c6f6d8'; ctx.fillRect(rx, ry, f.a*sc, f.b*sc); }
+  else if (i === 0){ ctx.fillStyle = '#fff6d6'; ctx.fillRect(rx, ry, f.a*sc, f.b*sc); }
+  // 単位格子（gcd 単位）
+  const gg = g;
+  if (gg * sc >= 6){
+    ctx.strokeStyle = '#00000018'; ctx.lineWidth = 1;
+    for (let u = gg; u < A0; u += gg){ ctx.beginPath(); ctx.moveTo(X + u*sc, Y); ctx.lineTo(X + u*sc, Y + B0*sc); ctx.stroke(); }
+    for (let u = gg; u < B0; u += gg){ ctx.beginPath(); ctx.moveTo(X, Y + u*sc); ctx.lineTo(X + A0*sc, Y + u*sc); ctx.stroke(); }
+  }
+  ctx.strokeStyle = last ? '#1f9d55' : '#e0a800'; ctx.lineWidth = 3;
+  ctx.strokeRect(rx, ry, f.a*sc, f.b*sc);
+  ctx.strokeStyle = '#2b3344'; ctx.lineWidth = 1.5; ctx.strokeRect(X, Y, A0*sc, B0*sc);
+  // 残り寸法ラベル
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (f.a*sc >= 60 && f.b*sc >= 30){
+    ctx.fillStyle = last ? '#1f9d55' : '#8a6500'; ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(last ? `${g}×${g}  gcd=${g}` : `残り ${f.a}×${f.b}`, rx + f.a*sc/2, ry + f.b*sc/2);
+  }
+  // 外側の寸法
+  ctx.fillStyle = COL.A; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText(`A = ${A0}`, X + A0*sc/2, Y - 16);
+  ctx.save(); ctx.translate(X - 18, Y + B0*sc/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle = '#9b5de0'; ctx.fillText(`B = ${B0}`, 0, 0); ctx.restore();
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawTokens(f, last){
+  const box = $('tokens');
+  const mxv = Math.max(A0, B0);
+  const sz = mxv <= 60 ? 34 : mxv <= 200 ? 24 : mxv <= 500 ? 18 : 13;
+  box.style.setProperty('--tk', sz + 'px');
+  box.style.setProperty('--tkf', Math.round(sz * .64) + 'px');
+  const subIdx = f.t === 'subA' ? 0 : (f.t === 'subB' ? 1 : -1);
+  const mk = (idx, init, val, emoji, cls, name) => {
+    let h = `<div class="trow"><div class="tl ${cls}">${name} = ${val}`;
+    if (idx === subIdx) h += ` <span style="color:var(--current);font-weight:400">（${f.amt} 個 取り除いた）</span>`;
+    h += `</div><div>`;
+    for (let k = 0; k < init; k++){
+      let c, s = '';
+      if (k < val){ c = `alive ${cls}` + (last ? ' fin' : ''); s = emoji; }
+      else if (idx === subIdx && k < val + f.amt){ c = 'gone'; s = emoji; }
+      else c = 'empty';
+      h += `<span class="tk ${c}">${s}</span>`;
+    }
+    return h + `</div></div>`;
+  };
+  box.innerHTML = mk(0, A0, f.a, '🍎', 'a', 'A') + mk(1, B0, f.b, '🍊', 'b', 'B') +
+    `<div class="note">赤枠は今回取り除いたトークン。個数は「小さい方の個数」ぶん。</div>`;
+}
+
+/* ---- 制御 ---- */
+function goTo(i){ renderFrame(Math.max(0, Math.min(frames.length - 1, i))); }
+function delay(){ return Math.round(1100 / Math.pow(1.6, +$('speed').value - 1)); }
+function play(){
+  if (timer) return;
+  if (cur >= frames.length - 1) goTo(0);
+  $('bPlay').textContent = '⏸ 停止';
+  const tick = () => {
+    if (cur >= frames.length - 1){ stop(); return; }
+    goTo(cur + 1);
+    timer = setTimeout(tick, delay());
+  };
+  timer = setTimeout(tick, delay());
+}
+function stop(){ if (timer){ clearTimeout(timer); timer = null; } $('bPlay').textContent = '▶ 再生'; }
+function toggle(){ timer ? stop() : play(); }
+
+$('btnSet').onclick = rebuild;
+['inA','inB'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') rebuild(); }));
+document.querySelectorAll('.presets button').forEach(b => b.onclick = () => {
+  $('inA').value = b.dataset.a; $('inB').value = b.dataset.b; rebuild();
+});
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  view = b.dataset.v;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  renderFrame(cur);
+});
+$('bFirst').onclick = () => { stop(); goTo(0); };
+$('bPrev').onclick = () => { stop(); goTo(cur - 1); };
+$('bNext').onclick = () => { stop(); goTo(cur + 1); };
+$('bLast').onclick = () => { stop(); goTo(frames.length - 1); };
+$('bPlay').onclick = toggle;
+$('progress').oninput = e => { stop(); goTo(+e.target.value); };
+document.addEventListener('keydown', e => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.key === 'ArrowLeft'){ stop(); goTo(cur - 1); e.preventDefault(); }
+  else if (e.key === 'ArrowRight'){ stop(); goTo(cur + 1); e.preventDefault(); }
+  else if (e.key === ' '){ toggle(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>
