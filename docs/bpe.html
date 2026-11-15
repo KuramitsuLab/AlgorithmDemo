@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPE — 文字単位のバイトペア符号化（併合を繰り返してトークンを作る）</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --cand:#ffd24a; --chosen:#4ade80; --cur:#ff6b6b; --deep:#2f5d8a; --state:#c084fc;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); letter-spacing:.04em; }
+  select, button, input, textarea { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  input[type=range] { accent-color:var(--accent); }
+  input[type=text] { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; }
+  textarea { width:100%; height:110px; background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
+  .rateval { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .srcinfo { font-size:12px; color:var(--muted); align-self:center; }
+  .srcinfo b { color:var(--accent); }
+  #pastePanel { display:none; background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:14px; margin:-6px 0 18px; }
+  #pastePanel .row { display:flex; gap:10px; margin-top:8px; align-items:center; }
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:880px){ .layout { grid-template-columns:1fr; } }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; gap:14px; }
+  .desc { min-height:44px; font-size:14px; display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px; flex:none;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .desc .badge.count { background:var(--cand); color:#06122a; border-color:var(--cand); }
+  .desc .badge.merge { background:var(--chosen); color:#06122a; border-color:var(--chosen); }
+  .h { font-size:12px; color:var(--muted); margin:0 0 4px; }
+  .tokbox { background:#f7f9fc; border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; height:250px; overflow-y:auto; line-height:1; font-size:0; }
+  .tk { display:inline-block; font-size:16px; line-height:1.35; padding:2px 3px; margin:2px 1px;
+    border:1px solid var(--line); border-radius:5px; background:#fff; white-space:pre; vertical-align:top; }
+  .tk.l2 { background:#e3efff; border-color:#b9d3f3; }
+  .tk.l3 { background:#cfe3fb; border-color:#9cc2ee; }
+  .tk.l4 { background:#b7d4f6; border-color:#7fb0e6; }
+  .tk.l5 { background:#9ec5f2; border-color:#6aa3e0; }
+  .tk.new { background:var(--chosen); border-color:#22a35a; font-weight:700; }
+  .pg { display:inline-block; vertical-align:top; background:var(--cand); border-radius:7px;
+    padding:0 1px; margin:0 1px; box-shadow:0 0 0 2px var(--cand); }
+  .pg .tk { margin:2px 1px; border-color:#c9a21c; background:#fff8dc; }
+  .nl { display:block; height:0; }
+  .ptable { display:flex; flex-direction:column; gap:4px; }
+  .prow { display:grid; grid-template-columns:150px 1fr 56px; gap:8px; align-items:center; font-size:13px; }
+  .prow .lab { display:flex; gap:3px; align-items:center; white-space:pre; overflow:hidden; }
+  .prow .lab .tk { font-size:13px; padding:0 3px; margin:0; }
+  .prow .lab .pl { color:var(--muted); }
+  .prow .bar { background:var(--panel2); border-radius:5px; height:16px; overflow:hidden; }
+  .prow .bar i { display:block; height:100%; background:var(--deep); border-radius:5px; }
+  .prow.best .bar i { background:var(--cand); }
+  .prow.best { font-weight:700; }
+  .prow .n { text-align:right; font-family:Consolas,monospace; font-variant-numeric:tabular-nums; }
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr auto; gap:6px 10px; font-size:13px; }
+  .stats .k { color:var(--muted); }
+  .stats .v { font-family:Consolas,monospace; color:var(--accent); font-weight:700;
+    text-align:right; font-variant-numeric:tabular-nums; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:4px; display:inline-block; flex:none; border:1px solid var(--line); }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.7; margin:0; }
+  .note b { color:var(--accent); }
+  .note ol { margin:4px 0 0; padding-left:20px; }
+  #mlist { max-height:210px; overflow-y:auto; font-size:12.5px; border:1px solid var(--line);
+    border-radius:8px; background:#f7f9fc; }
+  .mi { display:flex; gap:6px; padding:3px 8px; cursor:pointer; align-items:center; white-space:pre; }
+  .mi:hover { background:#e4eaf5; }
+  .mi.cur { background:var(--cand); }
+  .mi.future { opacity:.35; }
+  .mi .no { color:var(--muted); width:30px; flex:none; font-family:Consolas,monospace; }
+  .mi .arrow { color:var(--muted); }
+  .mi .mt { font-weight:700; color:var(--deep); }
+  .mi .cnt { margin-left:auto; color:var(--muted); font-family:Consolas,monospace; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; display:block; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  @media (max-width:880px){ #cmpGrid { grid-template-columns:1fr !important; } }
+  .cmpbox { background:#f7f9fc; border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:0; margin-bottom:6px; }
+  .cmpbox .lbl { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .cmpm { background:#f7f9fc; border:1px solid var(--line); border-radius:8px; padding:4px 6px; font-size:12px; line-height:1.9; min-height:40px; }
+  .try { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+  .try input { flex:1; min-width:220px; }
+  #tryOut { background:#f7f9fc; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+    min-height:44px; font-size:0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 BPE（バイトペア符号化）</h1>
+  <span class="sub"><b>文字単位</b>から始めて、「いちばんよく隣り合うペア」を1つのトークンに併合していく — LLM のトークナイザの基本アイデア</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>学習テキスト</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="btnNeko">🐈 吾輩は猫である（日本語）</button>
+        <button id="btnNekoEn">🐈 I Am a Cat（英訳）</button>
+        <button id="btnFile">📂 ファイルを選ぶ…</button>
+        <button id="btnPaste">✏ 貼り付け</button>
+        <input type="file" id="fileInput" accept=".txt,text/plain" style="display:none">
+      </div>
+    </div>
+    <div class="field">
+      <label>先頭から使う文字数</label>
+      <select id="size">
+        <option value="1000">1,000 字</option>
+        <option value="3000" selected>3,000 字</option>
+        <option value="10000">10,000 字</option>
+        <option value="100000">全部（第1章）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>併合の回数 M = <span class="rateval" id="mVal">60</span></label>
+      <input type="range" id="mRange" min="1" max="200" value="60" style="width:150px">
+    </div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="10" value="5" style="width:110px">
+    </div>
+    <div class="field">
+      <label>併合の対象</label>
+      <label style="font-size:13px;color:var(--text);display:flex;gap:6px;align-items:center;cursor:pointer;padding:8px 0">
+        <input type="checkbox" id="noSp" checked>空白をまたぐ併合をしない</label>
+    </div>
+    <div class="srcinfo" id="srcInfo"></div>
+  </div>
+
+  <div class="playbar" style="margin:-6px 0 18px">
+    <button id="bFirst">⏮</button>
+    <button id="bPrev">◀ 戻る</button>
+    <button class="primary" id="bPlay">▶ 再生</button>
+    <button id="bNext">次へ ▶</button>
+    <button id="bLast">⏭</button>
+    <input type="range" id="progress" min="0" max="0" value="0">
+    <span class="step-label" id="stepLabel"></span>
+    <span class="step-label"><kbd>←</kbd><kbd>→</kbd> 1ステップ　<kbd>Space</kbd> 再生/停止</span>
+  </div>
+
+  <div id="pastePanel">
+    <div class="h">学習させたい文章を貼り付けてください（改行は文の区切りとして扱い、ペアは改行をまたぎません）</div>
+    <textarea id="pasteArea" placeholder="ここにテキストを貼り付け"></textarea>
+    <div class="row"><button class="primary" id="btnPasteGo">このテキストで学習</button>
+      <button id="btnPasteClose">閉じる</button></div>
+  </div>
+
+  <div class="layout">
+    <div class="stage">
+      <div class="desc" id="desc"></div>
+      <div>
+        <p class="h">テキストの先頭部分（いまのトークン列。1つの枠 ＝ 1トークン）</p>
+        <div class="tokbox" id="tokbox"></div>
+      </div>
+      <div>
+        <p class="h" id="ptitle">隣り合うペアの出現回数（上位10）</p>
+        <div class="ptable" id="ptable"></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>状態</h3>
+        <div class="stats">
+          <span class="k">元の文字数</span><span class="v" id="sChars">-</span>
+          <span class="k">文字の種類（最初の語彙）</span><span class="v" id="sV0">-</span>
+          <span class="k">併合した回数</span><span class="v" id="sK">-</span>
+          <span class="k">語彙の大きさ</span><span class="v" id="sV">-</span>
+          <span class="k">トークン数</span><span class="v" id="sTok">-</span>
+          <span class="k">トークン数 / 文字数</span><span class="v" id="sRatio">-</span>
+          <span class="k">1トークンの平均文字数</span><span class="v" id="sAvg">-</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>併合の履歴（クリックでその時点へ）</h3>
+        <div id="mlist"></div>
+      </div>
+      <div class="card">
+        <h3>トークン数の推移</h3>
+        <canvas id="curve" width="300" height="130"></canvas>
+        <p class="note" style="margin-top:6px">併合のたびに文章が短いトークン列になる（＝圧縮）。</p>
+      </div>
+      <div class="card">
+        <h3>アルゴリズム</h3>
+        <p class="note"><b>BPE</b> の学習は次の繰り返し：
+        <ol>
+          <li>文章を<b>1文字ずつ</b>のトークンに分ける</li>
+          <li>隣り合う2トークンの<b>ペアを全部数える</b></li>
+          <li>最多のペアを<b>新しい1トークン</b>に置き換える</li>
+          <li>語彙に追加し、2. に戻る</li>
+        </ol></p>
+      </div>
+      <div class="card">
+        <h3>凡例</h3>
+        <div class="legend">
+          <span><i style="background:#fff"></i>1文字のトークン</span>
+          <span><i style="background:#cfe3fb"></i>併合で作ったトークン（濃いほど長い）</span>
+          <span><i style="background:var(--cand)"></i>最多のペア（併合する）</span>
+          <span><i style="background:var(--chosen)"></i>できた新トークン</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <h3>日本語 vs 英語：同じ内容（第1章）を、同じ併合回数で比べる</h3>
+    <p class="note" id="cmpMsg" style="margin-bottom:12px"></p>
+    <div class="layout" style="grid-template-columns:1fr 1fr;gap:18px" id="cmpGrid">
+      <div>
+        <div class="stats" id="cmpTable" style="grid-template-columns:1.4fr 1fr 1fr"></div>
+        <p class="h" style="margin-top:14px">いまの併合回数での分割（同じ意味の文）</p>
+        <div id="cmpSamples"></div>
+      </div>
+      <div>
+        <p class="h">トークン数 ÷ 文字数 の推移（小さいほど圧縮が進んでいる）</p>
+        <canvas id="cmpCurve" width="480" height="210"></canvas>
+        <p class="h" style="margin-top:14px">直近の併合ルール（左：日本語／右：英語）</p>
+        <div id="cmpMerges" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:12px">見どころ：
+    <b>日本語</b>は最初の語彙（文字の種類）が約1,000と大きく、1文字がすでに意味を持つので、併合しても減り方がゆるやか。
+    <b>英語</b>は文字が約60種しかなく、併合の早い段階で <code>th</code>・<code>he</code>・<code>the</code> のような頻出の綴りがまとまり、同じ回数でも圧縮が速く進みます。
+    併合の対象に「空白をまたぐ併合をしない」を付けると、英語は単語の内側だけが育ちます（外すと <code>␣the</code> のように語の区切りを含むトークンもできます）。
+    語彙の大きさ・トークン数・圧縮率のどれで見るかで「どちらが有利か」は変わります。</p>
+  </div>
+
+  <div class="card">
+    <h3>学んだ併合ルールで文章を分割してみる（いまの時点までの併合を、学習した順に適用）</h3>
+    <div class="try">
+      <input type="text" id="tryIn" value="吾輩は猫である。名前はまだ無い。">
+      <span class="step-label" id="tryInfo"></span>
+    </div>
+    <div id="tryOut"></div>
+    <p class="note" style="margin-top:8px">学習データに出てこなかった組み合わせは、細かい（1文字の）トークンのまま残ります。
+    併合を進めるほど、よく出る語や言い回しが大きなトークンにまとまっていきます。</p>
+  </div>
+</div>
+
+<script id="corpus" type="text/plain">一
+吾輩は猫である。
+名前はまだ無い。
+どこで生れたかとんと見当がつかぬ。
+何でも薄暗いじめじめした所でニャーニャー泣いていた事だけは記憶している。
+吾輩はここで始めて人間というものを見た。
+しかもあとで聞くとそれは書生という人間中で一番獰悪な種族であったそうだ。
+この書生というのは時々我々を捕えて煮て食うという話である。
+しかしその当時は何という考もなかったから別段恐しいとも思わなかった。
+ただ彼の掌に載せられてスーと持ち上げられた時何だかフワフワした感じがあったばかりである。
+掌の上で少し落ちついて書生の顔を見たのがいわゆる人間というものの見始であろう。
+この時妙なものだと思った感じが今でも残っている。
+第一毛をもって装飾されべきはずの顔がつるつるしてまるで薬缶だ。
+その後猫にもだいぶ逢ったがこんな片輪には一度も出会わした事がない。
+のみならず顔の真中があまりに突起している。
+そうしてその穴の中から時々ぷうぷうと煙を吹く。
+どうも咽せぽくて実に弱った。
+これが人間の飲む煙草というものである事はようやくこの頃知った。
+この書生の掌の裏でしばらくはよい心持に坐っておったが、しばらくすると非常な速力で運転し始めた。
+書生が動くのか自分だけが動くのか分らないが無暗に眼が廻る。
+胸が悪くなる。
+到底助からないと思っていると、どさりと音がして眼から火が出た。
+それまでは記憶しているがあとは何の事やらいくら考え出そうとしても分らない。
+ふと気が付いて見ると書生はいない。
+たくさんおった兄弟が一疋も見えぬ。
+肝心の母親さえ姿を隠してしまった。
+その上今までの所とは違って無暗に明るい。
+眼を明いていられぬくらいだ。
+はてな何でも容子がおかしいと、のそのそ這い出して見ると非常に痛い。
+吾輩は藁の上から急に笹原の中へ棄てられたのである。
+ようやくの思いで笹原を這い出すと向うに大きな池がある。
+吾輩は池の前に坐ってどうしたらよかろうと考えて見た。
+別にこれという分別も出ない。
+しばらくして泣いたら書生がまた迎に来てくれるかと考え付いた。
+ニャー、ニャーと試みにやって見たが誰も来ない。
+そのうち池の上をさらさらと風が渡って日が暮れかかる。
+腹が非常に減って来た。
+泣きたくても声が出ない。
+仕方がない、何でもよいから食物のある所まであるこうと決心をしてそろりそろりと池を左りに廻り始めた。
+どうも非常に苦しい。
+そこを我慢して無理やりに這って行くとようやくの事で何となく人間臭い所へ出た。
+ここへ這入ったら、どうにかなると思って竹垣の崩れた穴から、とある邸内にもぐり込んだ。
+縁は不思議なもので、もしこの竹垣が破れていなかったなら、吾輩はついに路傍に餓死したかも知れんのである。
+一樹の蔭とはよく云ったものだ。
+この垣根の穴は今日に至るまで吾輩が隣家の三毛を訪問する時の通路になっている。
+さて邸へは忍び込んだもののこれから先どうして善いか分らない。
+そのうちに暗くなる、腹は減る、寒さは寒し、雨が降って来るという始末でもう一刻の猶予が出来なくなった。
+仕方がないからとにかく明るくて暖かそうな方へ方へとあるいて行く。
+今から考えるとその時はすでに家の内に這入っておったのだ。
+ここで吾輩は彼の書生以外の人間を再び見るべき機会に遭遇したのである。
+第一に逢ったのがおさんである。
+これは前の書生より一層乱暴な方で吾輩を見るや否やいきなり頸筋をつかんで表へ抛り出した。
+いやこれは駄目だと思ったから眼をねぶって運を天に任せていた。
+しかしひもじいのと寒いのにはどうしても我慢が出来ん。
+吾輩は再びおさんの隙を見て台所へ這い上った。
+すると間もなくまた投げ出された。
+吾輩は投げ出されては這い上り、這い上っては投げ出され、何でも同じ事を四五遍繰り返したのを記憶している。
+その時におさんと云う者はつくづくいやになった。
+この間おさんの三馬を偸んでこの返報をしてやってから、やっと胸の痞が下りた。
+吾輩が最後につまみ出されようとしたときに、この家の主人が騒々しい何だといいながら出て来た。
+下女は吾輩をぶら下げて主人の方へ向けてこの宿なしの小猫がいくら出しても出しても御台所へ上って来て困りますという。
+主人は鼻の下の黒い毛を撚りながら吾輩の顔をしばらく眺めておったが、やがてそんなら内へ置いてやれといったまま奥へ這入ってしまった。
+主人はあまり口を聞かぬ人と見えた。
+下女は口惜しそうに吾輩を台所へ抛り出した。
+かくして吾輩はついにこの家を自分の住家と極める事にしたのである。
+吾輩の主人は滅多に吾輩と顔を合せる事がない。
+職業は教師だそうだ。
+学校から帰ると終日書斎に這入ったぎりほとんど出て来る事がない。
+家のものは大変な勉強家だと思っている。
+当人も勉強家であるかのごとく見せている。
+しかし実際はうちのものがいうような勤勉家ではない。
+吾輩は時々忍び足に彼の書斎を覗いて見るが、彼はよく昼寝をしている事がある。
+時々読みかけてある本の上に涎をたらしている。
+彼は胃弱で皮膚の色が淡黄色を帯びて弾力のない不活溌な徴候をあらわしている。
+その癖に大飯を食う。
+大飯を食った後でタカジヤスターゼを飲む。
+飲んだ後で書物をひろげる。
+二三ページ読むと眠くなる。
+涎を本の上へ垂らす。
+これが彼の毎夜繰り返す日課である。
+吾輩は猫ながら時々考える事がある。
+教師というものは実に楽なものだ。
+人間と生れたら教師となるに限る。
+こんなに寝ていて勤まるものなら猫にでも出来ぬ事はないと。
+それでも主人に云わせると教師ほどつらいものはないそうで彼は友達が来る度に何とかかんとか不平を鳴らしている。
+吾輩がこの家へ住み込んだ当時は、主人以外のものにははなはだ不人望であった。
+どこへ行っても跳ね付けられて相手にしてくれ手がなかった。
+いかに珍重されなかったかは、今日に至るまで名前さえつけてくれないのでも分る。
+吾輩は仕方がないから、出来得る限り吾輩を入れてくれた主人の傍にいる事をつとめた。
+朝主人が新聞を読むときは必ず彼の膝の上に乗る。
+彼が昼寝をするときは必ずその背中に乗る。
+これはあながち主人が好きという訳ではないが別に構い手がなかったからやむを得んのである。
+その後いろいろ経験の上、朝は飯櫃の上、夜は炬燵の上、天気のよい昼は椽側へ寝る事とした。
+しかし一番心持の好いのは夜に入ってここのうちの小供の寝床へもぐり込んでいっしょにねる事である。
+この小供というのは五つと三つで夜になると二人が一つ床へ入って一間へ寝る。
+吾輩はいつでも彼等の中間に己れを容るべき余地を見出してどうにか、こうにか割り込むのであるが、運悪く小供の一人が眼を醒ますが最後大変な事になる。
+小供は——ことに小さい方が質がわるい——猫が来た猫が来たといって夜中でも何でも大きな声で泣き出すのである。
+すると例の神経胃弱性の主人は必ず眼をさまして次の部屋から飛び出してくる。
+現にせんだってなどは物指で尻ぺたをひどく叩かれた。
+吾輩は人間と同居して彼等を観察すればするほど、彼等は我儘なものだと断言せざるを得ないようになった。
+ことに吾輩が時々同衾する小供のごときに至っては言語同断である。
+自分の勝手な時は人を逆さにしたり、頭へ袋をかぶせたり、抛り出したり、へっついの中へ押し込んだりする。
+しかも吾輩の方で少しでも手出しをしようものなら家内総がかりで追い廻して迫害を加える。
+この間もちょっと畳で爪を磨いだら細君が非常に怒ってそれから容易に座敷へ入れない。
+台所の板の間で他が顫えていても一向平気なものである。
+吾輩の尊敬する筋向の白君などは逢う度毎に人間ほど不人情なものはないと言っておらるる。
+白君は先日玉のような子猫を四疋産まれたのである。
+ところがそこの家の書生が三日目にそいつを裏の池へ持って行って四疋ながら棄てて来たそうだ。
+白君は涙を流してその一部始終を話した上、どうしても我等猫族が親子の愛を完くして美しい家族的生活をするには人間と戦ってこれを剿滅せねばならぬといわれた。
+一々もっともの議論と思う。
+また隣りの三毛君などは人間が所有権という事を解していないといって大に憤慨している。
+元来我々同族間では目刺の頭でも鰡の臍でも一番先に見付けたものがこれを食う権利があるものとなっている。
+もし相手がこの規約を守らなければ腕力に訴えて善いくらいのものだ。
+しかるに彼等人間は毫もこの観念がないと見えて我等が見付けた御馳走は必ず彼等のために掠奪せらるるのである。
+彼等はその強力を頼んで正当に吾人が食い得べきものを奪ってすましている。
+白君は軍人の家におり三毛君は代言の主人を持っている。
+吾輩は教師の家に住んでいるだけ、こんな事に関すると両君よりもむしろ楽天である。
+ただその日その日がどうにかこうにか送られればよい。
+いくら人間だって、そういつまでも栄える事もあるまい。
+まあ気を永く猫の時節を待つがよかろう。
+我儘で思い出したからちょっと吾輩の家の主人がこの我儘で失敗した話をしよう。
+元来この主人は何といって人に勝れて出来る事もないが、何にでもよく手を出したがる。
+俳句をやってほととぎすへ投書をしたり、新体詩を明星へ出したり、間違いだらけの英文をかいたり、時によると弓に凝ったり、謡を習ったり、またあるときはヴァイオリンなどをブーブー鳴らしたりするが、気の毒な事には、どれもこれも物になっておらん。
+その癖やり出すと胃弱の癖にいやに熱心だ。
+後架の中で謡をうたって、近所で後架先生と渾名をつけられているにも関せず一向平気なもので、やはりこれは平の宗盛にて候を繰返している。
+みんながそら宗盛だと吹き出すくらいである。
+この主人がどういう考になったものか吾輩の住み込んでから一月ばかり後のある月の月給日に、大きな包みを提げてあわただしく帰って来た。
+何を買って来たのかと思うと水彩絵具と毛筆とワットマンという紙で今日から謡や俳句をやめて絵をかく決心と見えた。
+果して翌日から当分の間というものは毎日毎日書斎で昼寝もしないで絵ばかりかいている。
+しかしそのかき上げたものを見ると何をかいたものやら誰にも鑑定がつかない。
+当人もあまり甘くないと思ったものか、ある日その友人で美学とかをやっている人が来た時に下のような話をしているのを聞いた。
+「どうも甘くかけないものだね。
+人のを見ると何でもないようだが自ら筆をとって見ると今更のようにむずかしく感ずる」これは主人の述懐である。
+なるほど詐りのない処だ。
+彼の友は金縁の眼鏡越に主人の顔を見ながら、「そう初めから上手にはかけないさ、第一室内の想像ばかりで画がかける訳のものではない。
+昔し以太利の大家アンドレア・デル・サルトが言った事がある。
+画をかくなら何でも自然その物を写せ。
+天に星辰あり。
+地に露華あり。
+飛ぶに禽あり。
+走るに獣あり。
+池に金魚あり。
+枯木に寒鴉あり。
+自然はこれ一幅の大活画なりと。
+どうだ君も画らしい画をかこうと思うならちと写生をしたら」
+「へえアンドレア・デル・サルトがそんな事をいった事があるかい。
+ちっとも知らなかった。
+なるほどこりゃもっともだ。
+実にその通りだ」と主人は無暗に感心している。
+金縁の裏には嘲けるような笑が見えた。
+その翌日吾輩は例のごとく椽側に出て心持善く昼寝をしていたら、主人が例になく書斎から出て来て吾輩の後ろで何かしきりにやっている。
+ふと眼が覚めて何をしているかと一分ばかり細目に眼をあけて見ると、彼は余念もなくアンドレア・デル・サルトを極め込んでいる。
+吾輩はこの有様を見て覚えず失笑するのを禁じ得なかった。
+彼は彼の友に揶揄せられたる結果としてまず手初めに吾輩を写生しつつあるのである。
+吾輩はすでに十分寝た。
+欠伸がしたくてたまらない。
+しかしせっかく主人が熱心に筆を執っているのを動いては気の毒だと思って、じっと辛棒しておった。
+彼は今吾輩の輪廓をかき上げて顔のあたりを色彩っている。
+吾輩は自白する。
+吾輩は猫として決して上乗の出来ではない。
+背といい毛並といい顔の造作といいあえて他の猫に勝るとは決して思っておらん。
+しかしいくら不器量の吾輩でも、今吾輩の主人に描き出されつつあるような妙な姿とは、どうしても思われない。
+第一色が違う。
+吾輩は波斯産の猫のごとく黄を含める淡灰色に漆のごとき斑入りの皮膚を有している。
+これだけは誰が見ても疑うべからざる事実と思う。
+しかるに今主人の彩色を見ると、黄でもなければ黒でもない、灰色でもなければ褐色でもない、さればとてこれらを交ぜた色でもない。
+ただ一種の色であるというよりほかに評し方のない色である。
+その上不思議な事は眼がない。
+もっともこれは寝ているところを写生したのだから無理もないが眼らしい所さえ見えないから盲猫だか寝ている猫だか判然しないのである。
+吾輩は心中ひそかにいくらアンドレア・デル・サルトでもこれではしようがないと思った。
+しかしその熱心には感服せざるを得ない。
+なるべくなら動かずにおってやりたいと思ったが、さっきから小便が催うしている。
+身内の筋肉はむずむずする。
+最早一分も猶予が出来ぬ仕儀となったから、やむをえず失敬して両足を前へ存分のして、首を低く押し出してあーあと大なる欠伸をした。
+さてこうなって見ると、もうおとなしくしていても仕方がない。
+どうせ主人の予定は打ち壊わしたのだから、ついでに裏へ行って用を足そうと思ってのそのそ這い出した。
+すると主人は失望と怒りを掻き交ぜたような声をして、座敷の中から「この馬鹿野郎」と怒鳴った。
+この主人は人を罵るときは必ず馬鹿野郎というのが癖である。
+ほかに悪口の言いようを知らないのだから仕方がないが、今まで辛棒した人の気も知らないで、無暗に馬鹿野郎呼わりは失敬だと思う。
+それも平生吾輩が彼の背中へ乗る時に少しは好い顔でもするならこの漫罵も甘んじて受けるが、こっちの便利になる事は何一つ快くしてくれた事もないのに、小便に立ったのを馬鹿野郎とは酷い。
+元来人間というものは自己の力量に慢じてみんな増長している。
+少し人間より強いものが出て来て窘めてやらなくてはこの先どこまで増長するか分らない。
+我儘もこのくらいなら我慢するが吾輩は人間の不徳についてこれよりも数倍悲しむべき報道を耳にした事がある。
+吾輩の家の裏に十坪ばかりの茶園がある。
+広くはないが瀟洒とした心持ち好く日の当る所だ。
+うちの小供があまり騒いで楽々昼寝の出来ない時や、あまり退屈で腹加減のよくない折などは、吾輩はいつでもここへ出て浩然の気を養うのが例である。
+ある小春の穏かな日の二時頃であったが、吾輩は昼飯後快よく一睡した後、運動かたがたこの茶園へと歩を運ばした。
+茶の木の根を一本一本嗅ぎながら、西側の杉垣のそばまでくると、枯菊を押し倒してその上に大きな猫が前後不覚に寝ている。
+彼は吾輩の近づくのも一向心付かざるごとく、また心付くも無頓着なるごとく、大きな鼾をして長々と体を横えて眠っている。
+他の庭内に忍び入りたるものがかくまで平気に睡られるものかと、吾輩は窃かにその大胆なる度胸に驚かざるを得なかった。
+彼は純粋の黒猫である。
+わずかに午を過ぎたる太陽は、透明なる光線を彼の皮膚の上に抛げかけて、きらきらする柔毛の間より眼に見えぬ炎でも燃え出ずるように思われた。
+彼は猫中の大王とも云うべきほどの偉大なる体格を有している。
+吾輩の倍はたしかにある。
+吾輩は嘆賞の念と、好奇の心に前後を忘れて彼の前に佇立して余念もなく眺めていると、静かなる小春の風が、杉垣の上から出たる梧桐の枝を軽く誘ってばらばらと二三枚の葉が枯菊の茂みに落ちた。
+大王はかっとその真丸の眼を開いた。
+今でも記憶している。
+その眼は人間の珍重する琥珀というものよりも遥かに美しく輝いていた。
+彼は身動きもしない。
+双眸の奥から射るごとき光を吾輩の矮小なる額の上にあつめて、御めえは一体何だと云った。
+大王にしては少々言葉が卑しいと思ったが何しろその声の底に犬をも挫しぐべき力が籠っているので吾輩は少なからず恐れを抱いた。
+しかし挨拶をしないと険呑だと思ったから「吾輩は猫である。
+名前はまだない」となるべく平気を装って冷然と答えた。
+しかしこの時吾輩の心臓はたしかに平時よりも烈しく鼓動しておった。
+彼は大に軽蔑せる調子で「何、猫だ？
+猫が聞いてあきれらあ。
+全てえどこに住んでるんだ」随分傍若無人である。
+「吾輩はここの教師の家にいるのだ」「どうせそんな事だろうと思った。
+いやに瘠せてるじゃねえか」と大王だけに気焔を吹きかける。
+言葉付から察するとどうも良家の猫とも思われない。
+しかしその膏切って肥満しているところを見ると御馳走を食ってるらしい、豊かに暮しているらしい。
+吾輩は「そう云う君は一体誰だい」と聞かざるを得なかった。
+「己れあ車屋の黒よ」昂然たるものだ。
+車屋の黒はこの近辺で知らぬ者なき乱暴猫である。
+しかし車屋だけに強いばかりでちっとも教育がないからあまり誰も交際しない。
+同盟敬遠主義の的になっている奴だ。
+吾輩は彼の名を聞いて少々尻こそばゆき感じを起すと同時に、一方では少々軽侮の念も生じたのである。
+吾輩はまず彼がどのくらい無学であるかを試してみようと思って左の問答をして見た。
+「一体車屋と教師とはどっちがえらいだろう」
+「車屋の方が強いに極っていらあな。
+御めえのうちの主人を見ねえ、まるで骨と皮ばかりだぜ」
+「君も車屋の猫だけに大分強そうだ。
+車屋にいると御馳走が食えると見えるね」
+「何におれなんざ、どこの国へ行ったって食い物に不自由はしねえつもりだ。
+御めえなんかも茶畠ばかりぐるぐる廻っていねえで、ちっと己の後へくっ付いて来て見ねえ。
+一と月とたたねえうちに見違えるように太れるぜ」
+「追ってそう願う事にしよう。
+しかし家は教師の方が車屋より大きいのに住んでいるように思われる」
+「箆棒め、うちなんかいくら大きくたって腹の足しになるもんか」
+彼は大に肝癪に障った様子で、寒竹をそいだような耳をしきりとぴく付かせてあららかに立ち去った。
+吾輩が車屋の黒と知己になったのはこれからである。
+その後吾輩は度々黒と邂逅する。
+邂逅する毎に彼は車屋相当の気焔を吐く。
+先に吾輩が耳にしたという不徳事件も実は黒から聞いたのである。
+或る日例のごとく吾輩と黒は暖かい茶畠の中で寝転びながらいろいろ雑談をしていると、彼はいつもの自慢話しをさも新しそうに繰り返したあとで、吾輩に向って下のごとく質問した。
+「御めえは今までに鼠を何匹とった事がある」智識は黒よりも余程発達しているつもりだが腕力と勇気とに至っては到底黒の比較にはならないと覚悟はしていたものの、この問に接したる時は、さすがに極りが善くはなかった。
+けれども事実は事実で詐る訳には行かないから、吾輩は「実はとろうとろうと思ってまだ捕らない」と答えた。
+黒は彼の鼻の先からぴんと突張っている長い髭をびりびりと震わせて非常に笑った。
+元来黒は自慢をする丈にどこか足りないところがあって、彼の気焔を感心したように咽喉をころころ鳴らして謹聴していればはなはだ御しやすい猫である。
+吾輩は彼と近付になってから直にこの呼吸を飲み込んだからこの場合にもなまじい己れを弁護してますます形勢をわるくするのも愚である、いっその事彼に自分の手柄話をしゃべらして御茶を濁すに若くはないと思案を定めた。
+そこでおとなしく「君などは年が年であるから大分とったろう」とそそのかして見た。
+果然彼は墻壁の欠所に吶喊して来た。
+「たんとでもねえが三四十はとったろう」とは得意気なる彼の答であった。
+彼はなお語をつづけて「鼠の百や二百は一人でいつでも引き受けるがいたちってえ奴は手に合わねえ。
+一度いたちに向って酷い目に逢った」「へえなるほど」と相槌を打つ。
+黒は大きな眼をぱちつかせて云う。
+「去年の大掃除の時だ。
+うちの亭主が石灰の袋を持って椽の下へ這い込んだら御めえ大きないたちの野郎が面喰って飛び出したと思いねえ」「ふん」と感心して見せる。
+「いたちってけども何鼠の少し大きいぐれえのものだ。
+こん畜生って気で追っかけてとうとう泥溝の中へ追い込んだと思いねえ」「うまくやったね」と喝采してやる。
+「ところが御めえいざってえ段になると奴め最後っ屁をこきゃがった。
+臭えの臭くねえのってそれからってえものはいたちを見ると胸が悪くならあ」彼はここに至ってあたかも去年の臭気を今なお感ずるごとく前足を揚げて鼻の頭を二三遍なで廻わした。
+吾輩も少々気の毒な感じがする。
+ちっと景気を付けてやろうと思って「しかし鼠なら君に睨まれては百年目だろう。
+君はあまり鼠を捕るのが名人で鼠ばかり食うものだからそんなに肥って色つやが善いのだろう」黒の御機嫌をとるためのこの質問は不思議にも反対の結果を呈出した。
+彼は喟然として大息していう。
+「考げえるとつまらねえ。
+いくら稼いで鼠をとったって——一てえ人間ほどふてえ奴は世の中にいねえぜ。
+人のとった鼠をみんな取り上げやがって交番へ持って行きゃあがる。
+交番じゃ誰が捕ったか分らねえからそのたんびに五銭ずつくれるじゃねえか。
+うちの亭主なんか己の御蔭でもう壱円五十銭くらい儲けていやがる癖に、碌なものを食わせた事もありゃしねえ。
+おい人間てものあ体の善い泥棒だぜ」さすが無学の黒もこのくらいの理窟はわかると見えてすこぶる怒った容子で背中の毛を逆立てている。
+吾輩は少々気味が悪くなったから善い加減にその場を胡魔化して家へ帰った。
+この時から吾輩は決して鼠をとるまいと決心した。
+しかし黒の子分になって鼠以外の御馳走を猟ってあるく事もしなかった。
+御馳走を食うよりも寝ていた方が気楽でいい。
+教師の家にいると猫も教師のような性質になると見える。
+要心しないと今に胃弱になるかも知れない。
+教師といえば吾輩の主人も近頃に至っては到底水彩画において望のない事を悟ったものと見えて十二月一日の日記にこんな事をかきつけた。
+○○と云う人に今日の会で始めて出逢った。
+あの人は大分放蕩をした人だと云うがなるほど通人らしい風采をしている。
+こう云う質の人は女に好かれるものだから○○が放蕩をしたと云うよりも放蕩をするべく余儀なくせられたと云うのが適当であろう。
+あの人の妻君は芸者だそうだ、羨ましい事である。
+元来放蕩家を悪くいう人の大部分は放蕩をする資格のないものが多い。
+また放蕩家をもって自任する連中のうちにも、放蕩する資格のないものが多い。
+これらは余儀なくされないのに無理に進んでやるのである。
+あたかも吾輩の水彩画に於けるがごときもので到底卒業する気づかいはない。
+しかるにも関せず、自分だけは通人だと思って済している。
+料理屋の酒を飲んだり待合へ這入るから通人となり得るという論が立つなら、吾輩も一廉の水彩画家になり得る理窟だ。
+吾輩の水彩画のごときはかかない方がましであると同じように、愚昧なる通人よりも山出しの大野暮の方が遥かに上等だ。
+通人論はちょっと首肯しかねる。
+また芸者の妻君を羨しいなどというところは教師としては口にすべからざる愚劣の考であるが、自己の水彩画における批評眼だけはたしかなものだ。
+主人はかくのごとく自知の明あるにも関せずその自惚心はなかなか抜けない。
+中二日置いて十二月四日の日記にこんな事を書いている。
+昨夜は僕が水彩画をかいて到底物にならんと思って、そこらに抛って置いたのを誰かが立派な額にして欄間に懸けてくれた夢を見た。
+さて額になったところを見ると我ながら急に上手になった。
+非常に嬉しい。
+これなら立派なものだと独りで眺め暮らしていると、夜が明けて眼が覚めてやはり元の通り下手である事が朝日と共に明瞭になってしまった。
+主人は夢の裡まで水彩画の未練を背負ってあるいていると見える。
+これでは水彩画家は無論夫子の所謂通人にもなれない質だ。
+主人が水彩画を夢に見た翌日例の金縁眼鏡の美学者が久し振りで主人を訪問した。
+彼は座につくと劈頭第一に「画はどうかね」と口を切った。
+主人は平気な顔をして「君の忠告に従って写生を力めているが、なるほど写生をすると今まで気のつかなかった物の形や、色の精細な変化などがよく分るようだ。
+西洋では昔しから写生を主張した結果今日のように発達したものと思われる。
+さすがアンドレア・デル・サルトだ」と日記の事はおくびにも出さないで、またアンドレア・デル・サルトに感心する。
+美学者は笑いながら「実は君、あれは出鱈目だよ」と頭を掻く。
+「何が」と主人はまだ※わられた事に気がつかない。
+「何がって君のしきりに感服しているアンドレア・デル・サルトさ。
+あれは僕のちょっと捏造した話だ。
+君がそんなに真面目に信じようとは思わなかったハハハハ」と大喜悦の体である。
+吾輩は椽側でこの対話を聞いて彼の今日の日記にはいかなる事が記さるるであろうかと予め想像せざるを得なかった。
+この美学者はこんな好加減な事を吹き散らして人を担ぐのを唯一の楽にしている男である。
+彼はアンドレア・デル・サルト事件が主人の情線にいかなる響を伝えたかを毫も顧慮せざるもののごとく得意になって下のような事を饒舌った。
+「いや時々冗談を言うと人が真に受けるので大に滑稽的美感を挑撥するのは面白い。
+せんだってある学生にニコラス・ニックルベーがギボンに忠告して彼の一世の大著述なる仏国革命史を仏語で書くのをやめにして英文で出版させたと言ったら、その学生がまた馬鹿に記憶の善い男で、日本文学会の演説会で真面目に僕の話した通りを繰り返したのは滑稽であった。
+ところがその時の傍聴者は約百名ばかりであったが、皆熱心にそれを傾聴しておった。
+それからまだ面白い話がある。
+せんだって或る文学者のいる席でハリソンの歴史小説セオファーノの話しが出たから僕はあれは歴史小説の中で白眉である。
+ことに女主人公が死ぬところは鬼気人を襲うようだと評したら、僕の向うに坐っている知らんと云った事のない先生が、そうそうあすこは実に名文だといった。
+それで僕はこの男もやはり僕同様この小説を読んでおらないという事を知った」神経胃弱性の主人は眼を丸くして問いかけた。
+「そんな出鱈目をいってもし相手が読んでいたらどうするつもりだ」あたかも人を欺くのは差支ない、ただ化の皮があらわれた時は困るじゃないかと感じたもののごとくである。
+美学者は少しも動じない。
+「なにその時ゃ別の本と間違えたとか何とか云うばかりさ」と云ってけらけら笑っている。
+この美学者は金縁の眼鏡は掛けているがその性質が車屋の黒に似たところがある。
+主人は黙って日の出を輪に吹いて吾輩にはそんな勇気はないと云わんばかりの顔をしている。
+美学者はそれだから画をかいても駄目だという目付で「しかし冗談は冗談だが画というものは実際むずかしいものだよ、レオナルド・ダ・ヴィンチは門下生に寺院の壁のしみを写せと教えた事があるそうだ。
+なるほど雪隠などに這入って雨の漏る壁を余念なく眺めていると、なかなかうまい模様画が自然に出来ているぜ。
+君注意して写生して見給えきっと面白いものが出来るから」「また欺すのだろう」「いえこれだけはたしかだよ。
+実際奇警な語じゃないか、ダ・ヴィンチでもいいそうな事だあね」「なるほど奇警には相違ないな」と主人は半分降参をした。
+しかし彼はまだ雪隠で写生はせぬようだ。
+車屋の黒はその後跛になった。
+彼の光沢ある毛は漸々色が褪めて抜けて来る。
+吾輩が琥珀よりも美しいと評した彼の眼には眼脂が一杯たまっている。
+ことに著るしく吾輩の注意を惹いたのは彼の元気の消沈とその体格の悪くなった事である。
+吾輩が例の茶園で彼に逢った最後の日、どうだと云って尋ねたら「いたちの最後屁と肴屋の天秤棒には懲々だ」といった。
+赤松の間に二三段の紅を綴った紅葉は昔しの夢のごとく散ってつくばいに近く代る代る花弁をこぼした紅白の山茶花も残りなく落ち尽した。
+三間半の南向の椽側に冬の日脚が早く傾いて木枯の吹かない日はほとんど稀になってから吾輩の昼寝の時間も狭められたような気がする。
+主人は毎日学校へ行く。
+帰ると書斎へ立て籠る。
+人が来ると、教師が厭だ厭だという。
+水彩画も滅多にかかない。
+タカジヤスターゼも功能がないといってやめてしまった。
+小供は感心に休まないで幼稚園へかよう。
+帰ると唱歌を歌って、毬をついて、時々吾輩を尻尾でぶら下げる。
+吾輩は御馳走も食わないから別段肥りもしないが、まずまず健康で跛にもならずにその日その日を暮している。
+鼠は決して取らない。
+おさんは未だに嫌いである。
+名前はまだつけてくれないが、欲をいっても際限がないから生涯この教師の家で無名の猫で終るつもりだ。</script>
+<script id="corpusEn" type="text/plain">1
+I am a cat. I do not have a name yet.
+I have no idea where I was born. I only remember crying "meow, meow" in a dark, damp place. There I saw a human for the first time. Later I heard that he was a "student," the cruelest kind of human. They say these students sometimes catch us, boil us and eat us. But at that time I did not know this, so I was not afraid. He picked me up in his hand, and I only felt a soft, floating feeling as I was lifted. When I settled down a little in his hand and looked at his face, that was probably the first time I ever saw a "human." I remember that I thought it was strange. A face should be covered with fur, but his was smooth, like a kettle. I have met many cats since then, but I have never met one with a face so strange. Also, the middle of his face sticks out too much. And sometimes smoke comes puffing out of the holes in it. It made me cough, and I was very troubled. Only recently did I learn that this is the tobacco that humans smoke.
+I sat comfortably in the student's hand for a while. Then, suddenly, it began to move very fast. I could not tell if the student was moving or only I was, but my eyes spun wildly. I felt sick. I thought I would surely die, and then there was a thump and I saw sparks in my eyes. I remember that much. After that, I cannot remember anything, however hard I try.
+When I came to my senses, the student was gone. My many brothers and sisters were gone too. Even my mother had disappeared. And the place was strangely bright, unlike the place before. I could hardly keep my eyes open. Something was wrong. I slowly crawled out, and it hurt a lot. I had been thrown from the straw into a field of bamboo grass.
+With great effort I crawled out of the grass, and there was a big pond ahead. I sat in front of the pond and wondered what to do. I could not think of anything. After a while I thought that if I cried, the student might come back for me. I tried crying "meow, meow," but nobody came. Meanwhile the wind blew softly over the pond, and the sun began to set. I became very hungry. I wanted to cry, but no voice came out. There was nothing to do. I decided to walk to some place with food, and slowly began to walk around the pond on the left. It was very hard. I forced myself to crawl on, and finally I reached a place that smelled of humans. I thought that something would happen if I went in, so I crept through a hole in a broken bamboo fence into a house.
+Fate is strange. If that fence had not been broken, I might have starved to death by the roadside. People say "even sharing a shade under a tree is fate," and it is true. Even now, that hole in the fence is the way I use when I visit Mike, the cat next door.
+I had sneaked into the yard, but I did not know what to do next. It got dark, I was hungry, it was cold, and it began to rain. I could not wait any longer. So I walked toward the places that looked bright and warm. Thinking about it now, I was already inside the house. There I got another chance to see humans other than that student. The first one I met was Osan, the maid. She was even rougher than the student. As soon as she saw me, she grabbed my neck and threw me outside. I thought, "This is bad," closed my eyes, and left it to fate. But I could not stand the hunger and the cold. When Osan was not looking, I climbed into the kitchen again. Soon I was thrown out again. I remember that I was thrown out and climbed back in, climbed in and was thrown out, four or five times. Then I came to hate Osan very much. Some time ago I stole a fish from her, and finally I felt better. Just as she was about to throw me out for the last time, the master of the house came out and asked, "What is all this noise?" The maid held me up by the neck, showed me to him, and said, "This stray kitten keeps coming into the kitchen, no matter how many times I throw it out." The master twisted the black hairs under his nose and looked at my face for a while. Then he said, "Well, let it stay here," and went back inside. He seemed to be a man who did not talk much. The maid angrily threw me down in the kitchen. And so I decided to make this house my home.
+My master rarely meets me. They say he is a teacher. After he comes home from school, he stays in his study all day and hardly ever comes out. The people in the house think he works very hard. He also acts as if he works hard. But he is not really as hard-working as they say. Sometimes I quietly look into his study, and he is often taking a nap. Sometimes he drools on the book he was reading. He has a weak stomach, and his skin is pale yellow, with no energy. Even so, he eats a lot. After eating a lot, he takes stomach medicine. After taking it, he opens a book. After reading two or three pages, he becomes sleepy. He drools on the book. This is what he does every night. I am only a cat, but sometimes I think: being a teacher must be very easy. If you are born a human, you should become a teacher. If you can do the job while sleeping so much, even a cat could do it. But the master says that nothing is harder than being a teacher, and he complains about it every time a friend comes.
+When I first came to live in this house, I was very unpopular with everyone except the master. Wherever I went, I was pushed away, and nobody would play with me. You can tell how unwanted I was from the fact that, even now, nobody has given me a name. I had no choice, so I tried to stay as close as I could to the master, who had let me in. In the morning, when he reads the newspaper, I always sit on his lap. When he takes a nap, I always sit on his back. It is not because I like him very much. There was simply nobody else to be with. Later, after trying many places, I decided on the rice container in the morning, the heated table at night, and the porch on sunny afternoons. But the most comfortable place is the bed of the children of this house, at night. I creep into it and sleep with them. The children are five and three years old, and at night the two sleep in one bed in one room. I always find a little space between them and somehow squeeze in. But if one of the children wakes up, it is terrible. The children, especially the younger one, are the troublemakers. They cry loudly in the middle of the night, "The cat came! The cat came!" Then the master, with his weak stomach and nervous nature, always wakes up and rushes in from the next room. Just the other day he hit my bottom hard with a ruler.
+The more I live with humans and watch them, the more I must say that they are selfish. This is especially true of the children I sometimes sleep with. When they feel like it, they turn me upside down, put a bag over my head, throw me, or push me into the stove. But if I do the slightest thing back, the whole family chases me and punishes me. The other day I sharpened my claws a little on the straw mat, and the wife got very angry. Since then she does not easily let me into the living room. They do not care at all if I shiver on the wooden floor of the kitchen. My respected friend White, who lives across the street, says every time we meet that nothing is as heartless as humans. White recently gave birth to four beautiful kittens. But the student at that house took them to the pond behind the house on the third day and threw all four away. White cried as she told me the whole story. She said that if we cats want to keep our parent-child love and live happy family lives, we must fight humans and destroy them. I think this is quite right. Also, Mike next door is very angry that humans do not understand the idea of ownership. Among us cats, whoever finds something first, even a fish head or a fish belly, has the right to eat it. If another cat does not follow this rule, it is fine to use force. But humans do not seem to have this idea at all, and they always steal the good food we find. They use their strength to take what we have every right to eat, and they do not care. White lives in a soldier's house, and Mike's master is a lawyer. Since I live in a teacher's house, I am more relaxed about such things than they are. I only want to get through each day somehow. Humans cannot stay on top forever. Well, I should wait patiently for the time of the cats.
+Speaking of selfishness, let me tell you a story of how my master failed because of his own selfishness. This master is not really good at anything, but he likes to try everything. He writes haiku and sends them to a magazine. He sends modern poems to another one. He writes English full of mistakes. Sometimes he is crazy about archery, or learns to sing old songs, or plays the violin with loud noises. Sadly, none of them has turned out well. Still, once he starts something, he is very serious about it, even though he has a weak stomach. He sings in the toilet, and the neighbors have nicknamed him "Professor Toilet." He does not care at all and keeps singing the same song, "I am Taira no Munemori." People burst out laughing, saying, "There goes Munemori." One day, about a month after I came to live here, on payday, the master came home in a hurry with a big package. I wondered what he had bought. It was watercolor paints, brushes and Whatman paper. He seemed to have decided to stop the singing and haiku and take up painting. Sure enough, from the next day, for a while, he painted every day in his study without even taking a nap. But when I saw what he painted, nobody could tell what it was. He probably thought it was not good either. One day a friend of his, who studies beauty and art, came, and I heard the following talk.
+"It is hard to paint well," said the master. "When I look at other people's pictures, it seems easy. But when I take up a brush myself, I find it hard all over again." This was the master's honest confession. It is surely true. His friend looked at the master through his gold-rimmed glasses and said, "Of course you cannot paint well from the start. And you cannot paint a picture just from imagining the inside of a room. The great Italian master Andrea del Sarto once said, 'If you want to paint, copy nature itself. In the sky there are stars. On the earth there is dew. For flying there are birds. For running there are animals. In the pond there are goldfish. On the dead tree there is a winter crow. Nature is one great living picture.' So, if you want to paint real pictures, you should draw from life."
+"Oh, did Andrea del Sarto say that? I did not know. That makes sense. You are quite right," said the master, deeply impressed. Behind the gold rims, I saw a mocking smile.
+The next day, as usual, I was napping happily on the porch. The master came out of his study, which was not usual, and was busy doing something behind me. I woke up and opened my eyes a little. He was completely absorbed in following Andrea del Sarto. I could not help laughing at the sight. Because his friend had teased him, he was now beginning to draw me. I had already slept enough. I badly wanted to yawn. But the master was working so hard with his brush that I felt sorry for him and stayed still. He had drawn my outline and was now coloring the face. I must confess something. As a cat, I am not very good-looking. I do not think my back, my fur or my face is better than other cats'. But even though I am ugly, I cannot believe that I look like the strange figure the master was drawing. First, the color was wrong. I have light gray fur with a yellow tint, like a Persian cat, and black spots like lacquer. Anyone would agree on that. But the master's color was neither yellow nor black, neither gray nor brown, and not a mix of them either. It was simply "a color," and there was no other way to describe it. Even stranger, there were no eyes. Of course, I was sleeping in his picture, so that is natural. But since there was nothing like an eye, nobody could tell whether it was a blind cat or a sleeping cat. I thought quietly, "Even Andrea del Sarto could do nothing with this." But I had to admire his effort. I wanted to stay still if I could, but I needed to pee. The muscles in my body were itching. I could not wait even a minute, so I apologized in my heart, stretched my front legs out, pushed my head down low, and gave a big yawn. Once that happened, there was no use being quiet. I had already ruined the master's plan, so I slowly crawled away to go and do my business in the back. Then the master, in a voice full of disappointment and anger, shouted from the room, "You fool!" This master always says "fool" when he scolds someone. He knows no other bad word, so it cannot be helped. But he does not know how much I had been holding still for him, and I think it is rude to call me a fool for no reason. If he were kind to me even a little when I sit on his back, I would accept this abuse. But he has never done anything pleasant for me, and he calls me a fool just because I went to pee. How cruel! Humans are all proud of their own power and have become too big for themselves. If something a little stronger than humans does not appear and teach them a lesson, there is no telling how far they will go.
+I can accept this much selfishness. But I once heard a story about human wrongdoing that was many times sadder than this.
+Behind my house there is a tea garden about ten tsubo in size. It is not large, but it is neat and pleasant, and the sun shines on it. When the children are too noisy for me to nap, or when I am too bored and my stomach feels bad, I always go there to refresh my spirit. One calm, warm day in late autumn, around two o'clock, after a good nap following lunch, I went to the tea garden for some exercise. I was smelling the tea plants one by one and had reached the cedar hedge on the west side, when I saw a big cat lying on a crushed dry chrysanthemum, fast asleep. He did not seem to notice me coming, or maybe he noticed and did not care. He lay stretched out, snoring loudly. I secretly marveled at his courage, sleeping so calmly in someone else's yard. He was a pure black cat. The sun, just past noon, poured clear light on his coat, and it seemed as if an invisible flame was burning among the shining soft hairs. He had the great body of a king among cats. He was surely twice my size. I forgot everything, full of admiration and curiosity, and stood in front of him, staring. A gentle autumn breeze moved the branches of a paulownia tree above the cedar hedge, and two or three leaves fell into the dry chrysanthemums. The king suddenly opened his round eyes wide. I still remember it. His eyes shone far more beautifully than amber, which humans treasure. He did not move. With a light that seemed to shoot out from deep in his eyes, he looked at my small forehead and said, "Who the hell are you?" I thought his words were rather rough for a king, but there was a power in his voice that could scare even a dog, so I felt quite afraid. But I thought it would be dangerous not to greet him, so I answered as calmly as I could, "I am a cat. I do not have a name yet." But my heart was beating much harder than usual.
+He said in a very scornful voice, "What? A cat? Don't make me laugh. Where do you live, anyway?" He was very rude. "I live in the teacher's house here," I said. "I thought so. You are pretty skinny," he said, boasting like a king. From his way of talking, I could tell he was not from a good family. But he was fat and shiny, so he seemed to eat well and live richly. I had to ask, "And who are you?" "I'm Kuro, from the rickshaw man's house," he said proudly. Kuro, the rickshaw man's cat, is a violent cat known to everyone around here. But because he is only a rickshaw man's cat, he is strong but has no education, so nobody wants to be friends with him. Everyone keeps away from him. When I heard his name, I felt a little uneasy, but at the same time I felt a little contempt. I decided to test how ignorant he was, and asked the following.
+"Which is greater, a rickshaw man or a teacher?"
+"The rickshaw man is stronger, of course. Look at your master. He is nothing but skin and bones."
+"You are strong too, being a rickshaw man's cat. It seems you can eat good food at a rickshaw man's house."
+"Hah, I never have trouble finding food, wherever I go. You should not just walk around the tea garden all day. Follow me for a while. In less than a month you will be so fat that no one will know you."
+"Maybe I will ask you some other time. But it seems that a teacher lives in a bigger house than a rickshaw man."
+"Stupid! No matter how big a house is, it does not fill your stomach."
+He was very angry, twitching his ears, which looked like cut bamboo, and walked away roughly. This was how I became acquainted with Kuro, the rickshaw man's cat.
+After that, I met Kuro often. Every time we met, he bragged in a way that suited a rickshaw man's cat. The story about human wrongdoing that I mentioned before was also something I heard from Kuro.
+One day, as usual, Kuro and I were lying in the warm tea garden, chatting about many things. He repeated his usual bragging as if it were new, and then asked me, "How many rats have you caught so far?" I thought my knowledge was much better than Kuro's, but I knew I could never compare with him in strength and courage. Still, when I heard the question, I felt a bit embarrassed. But the truth is the truth, and I could not lie. I answered, "Actually, I have wanted to catch one, but I have not caught any yet." Kuro shook the long whiskers sticking out from his nose and laughed a lot. Kuro brags so much because something is missing in him. If you listen carefully to his boasting, purring in your throat as if impressed, he is a very easy cat to handle. I had learned this soon after I met him. So this time too, I decided that defending myself would only make things worse. It would be better to let him talk about his own glories and avoid trouble. So I quietly said, "You are older, so you must have caught many." As I expected, he charged at the weak spot in the wall. "Not so many, but maybe thirty or forty," he answered proudly. He went on, "I can take on a hundred or two hundred rats alone, anytime, but a weasel is too much for me. I once had a terrible time with a weasel." "Oh, really," I said, nodding.
+Kuro blinked his big eyes and said, "It was last year, at the big spring cleaning. My master was crawling under the floor of the porch with a bag of lime, and a big weasel jumped out, surprised." "Hmm," I said, pretending to be impressed. "A weasel is just a little bigger than a rat. I thought, 'You rascal!' and chased it all the way into the ditch." "That was well done," I cheered. "But then, right at the last moment, the thing let out a stinky fart! It smelled so bad, and ever since, I feel sick whenever I see a weasel." At this point, as if he could still smell last year's stink, he raised his front paw and rubbed his nose two or three times. I felt a little sorry for him. I wanted to cheer him up, so I said, "But rats must be terrified when you glare at them. You are such a master rat catcher and eat so many rats that you are fat and shiny." This question, meant to please Kuro, strangely had the opposite effect. He sighed deeply and said, "When I think about it, it is all pointless. No matter how hard I work catching rats, there is nobody in the world as shameless as humans. They take all the rats I catch and bring them to the police box. The police box does not know who caught them, so they give five sen each time. My master has already made about one yen fifty sen thanks to me, but he has never given me a decent meal. Hey, humans are polite thieves." Even uneducated Kuro seemed to understand this much, and he was very angry, his back hair standing up. I felt a little scared, so I somehow got away from the place and went home. From that time, I decided never to catch rats. But I did not become Kuro's follower and go hunting for good food other than rats either. I would rather sleep than eat good food. It seems that if a cat lives in a teacher's house, it becomes like a teacher. I should be careful, or I might get a weak stomach.
+Speaking of teachers, my master, too, seems to have given up on watercolors by now, and on the first of December he wrote this in his diary.
+Today, at a party, I met Mr. So-and-so for the first time. They say he has lived a wild life, and indeed he looks like a man of the world. Men like him are loved by women, so it would be better to say that he was forced to live wildly rather than that he chose it. His wife is a geisha, they say. How I envy him! Most people who speak badly of wild men are those who lack the qualification to be wild. And among those who think of themselves as wild men, there are many who also lack the qualification. They are not forced to do it, but they push themselves to do it. It is just like my watercolors, which I will never finish. Even so, they think of themselves as men of the world and feel satisfied. If drinking sake at restaurants and going to teahouses makes a man a man of the world, then I too could become a fine watercolor painter. Just as it is better for me not to paint, a country fellow with no manners is far better than a foolish man of the world.
+I cannot quite agree with his idea about men of the world. Also, envying a geisha wife is a foolish thing for a teacher to say. But his judgment about his own watercolors is correct. In this way, the master knows himself well, yet his vanity does not go away easily. Two days later, on December 4, he wrote this in his diary.
+Last night I dreamed that I had painted a watercolor, thought it was hopeless, and thrown it aside, and that somebody had put it in a fine frame and hung it above the door. When I saw it in the frame, I thought I had suddenly become good. I was very happy. I was looking at it alone, thinking, "This is a fine picture," when morning came, I woke up, and with the morning sun it became clear that it was bad, as before.
+It seems that the master is carrying his love of watercolors even into his dreams. With this, he will never become a watercolor painter, nor a "man of the world" as he calls it.
+The day after the master dreamed of his watercolor, the gold-rimmed-glasses scholar of beauty came to see him after a long time. As soon as he sat down, he asked, "How is the painting?" The master answered calmly, "I have been trying to draw from life, following your advice. Indeed, when I draw from life, I begin to notice the shapes of things and small changes in color that I never noticed before. I think the West became so advanced because they have always insisted on drawing from life. Andrea del Sarto was truly great." He said nothing about his diary and admired Andrea del Sarto again. The scholar laughed, scratched his head, and said, "Actually, that was nonsense." "What was?" said the master, who still did not realize he had been tricked. "What do you mean, what? The Andrea del Sarto you admire so much. I made that story up. I never thought you would believe it so seriously. Ha ha ha!" He was delighted. Listening to this from the porch, I could not help wondering what the master would write in his diary today. This scholar's only pleasure is to spread such careless lies and trick people. Without thinking at all about how the Andrea del Sarto trick had hurt the master's feelings, he proudly went on to say the following.
+"You know, when I joke, people often take it seriously, and the funny result amuses me. The other day I told a student that Nicholas Nickleby had advised Gibbon to stop writing his great History of the French Revolution in French and to publish it in English. That student had a very good memory, and he repeated exactly what I told him at a talk of the Japanese Literature Society. It was so funny. About a hundred people were in the audience, and they all listened eagerly. And I have another funny story. The other day, at a gathering with some writers, someone mentioned Harrison's historical novel Theophano. I said that it was the best of all historical novels, and that the scene where the heroine dies is so chilling. Then a gentleman sitting across from me, one of those who never say 'I don't know,' said, 'Yes, yes, that part is truly a fine piece of writing.' So I learned that he, like me, had not read the book."
+The master, with his nervous stomach, opened his eyes wide and asked, "If you tell such lies, what will you do if the other person has read it?" He seemed to feel that tricking people is fine, but being found out would be a problem. The scholar was not troubled at all. "Then I will just say I mixed it up with another book," he said, and laughed out loud. This scholar wears gold-rimmed glasses, but his nature is somewhat like Kuro's. The master silently blew out smoke in rings, looking as if he had no such courage. The scholar looked at him as if to say, "That is why you cannot paint," and said, "But joking aside, painting really is hard. They say Leonardo da Vinci taught his students to copy the stains on temple walls. Indeed, if you go into the toilet and look at a leaking wall, you will find that nice patterns have formed naturally. Try drawing them from life. You will surely get something interesting." "You are tricking me again, aren't you?" "No, this one is true. Is it not a clever saying? It sounds just like something da Vinci would say." "It is certainly clever," said the master, half giving in. But it seems he has not yet tried drawing in the toilet.
+After that, Kuro the rickshaw man's cat became lame. His shiny fur slowly lost its color and began to fall out. His eyes, which I once said were more beautiful than amber, were full of eye discharge. What I noticed most was that he had lost his spirit and his body had become weak. On the last day I met him in the tea garden, I asked how he was, and he said, "I have had enough of the weasel's last fart and the fish seller's carrying pole."
+The red leaves between the red pines, which looked like a few steps of crimson, fell away like an old dream. The red and white camellias near the stone water basin dropped their petals one after another and have now all fallen. The winter sun sets early on the south-facing porch, three and a half ken wide. Now that the cold wind blows almost every day, I feel my nap time has become shorter.
+The master goes to school every day. When he comes home, he shuts himself in his study. When people visit, he says how much he hates being a teacher. He rarely paints now. He also stopped taking stomach medicine, saying it does not work. The children, to their credit, go to kindergarten without missing a day. When they come home, they sing songs, bounce a ball, and sometimes hang me by the tail.
+I do not eat fine food, so I do not get fat, but I am fairly healthy and spend my days without becoming lame. I never catch rats. I still dislike Osan. They have not given me a name yet, but there is no end to wanting things, so I plan to live out my life as a nameless cat in this teacher's house.</script>
+<script>
+const $ = id => document.getElementById(id);
+const VIEW = 380;            // 表示する先頭部分の元文字数
+const MAX_CHARS = 30000;
+const NEKO = $("corpus").textContent, NEKO_EN = $("corpusEn").textContent;
+
+let srcName = "吾輩は猫である（第1章）", srcText = NEKO;
+let text = "", vocab = [], merges = [], frames = [], curve = [], V0 = 0, nChars = 0, truncated = false;
+let cur = 0, timer = null;
+
+function normalize(s) {
+  return s.replace(/\r\n?/g, "\n").replace(/[ \t　]*\n[ \t　]*/g, "\n").replace(/\n{2,}/g, "\n").replace(/^\n+|\n+$/g, "");
+}
+function disp(s) { return s.replace(/[ 　]/g, "␣"); }
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ---------- 学習（全併合を記録） ---------- */
+function build() {
+  const n = parseInt($("size").value, 10);
+  const M = parseInt($("mRange").value, 10);
+  const norm = normalize(srcText);
+  text = norm.slice(0, n);
+  truncated = norm.length > n;
+  // 初期語彙＝出てきた文字（頻度順）
+  const freq = new Map();
+  for (const ch of text) if (ch !== "\n") freq.set(ch, (freq.get(ch) || 0) + 1);
+  vocab = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
+  V0 = vocab.length;
+  const idOf = new Map(vocab.map((c, i) => [c, i]));
+  const noSp = $("noSp").checked;
+  const sp = new Set(vocab.map((c, i) => /^[ \u3000\t]$/.test(c) ? i : -1).filter(i => i >= 0));
+  let toks = [];
+  for (const ch of text) toks.push(ch === "\n" ? -1 : idOf.get(ch));
+  nChars = toks.filter(t => t >= 0).length;
+  merges = []; frames = []; curve = [countTok(toks)];
+
+  const snap = t => {
+    const out = []; let len = 0;
+    for (let i = 0; i < t.length && len < VIEW; i++) {
+      out.push(t[i]);
+      if (t[i] >= 0) len += vocab[t[i]].length;
+    }
+    return out;
+  };
+  frames.push({ kind: "init", k: 0, pre: snap(toks), tokCount: curve[0], vocabSize: V0 });
+
+  for (let k = 1; k <= M; k++) {
+    const cnt = new Map();
+    for (let i = 0; i + 1 < toks.length; i++) {
+      const a = toks[i], b = toks[i + 1];
+      if (a < 0 || b < 0) continue;
+      if (noSp && (sp.has(a) || sp.has(b))) continue;
+      const key = a * 100000 + b;
+      cnt.set(key, (cnt.get(key) || 0) + 1);
+    }
+    let bestKey = -1, bestC = 0;
+    for (const [key, c] of cnt) if (c > bestC) { bestC = c; bestKey = key; }
+    if (bestC < 2) break;                         // これ以上まとまるペアがない
+    const table = [...cnt.entries()].sort((x, y) => y[1] - x[1]).slice(0, 10)
+      .map(([key, c]) => ({ a: Math.floor(key / 100000), b: key % 100000, c }));
+    const a = Math.floor(bestKey / 100000), b = bestKey % 100000;
+    const tokCount = countTok(toks);
+    frames.push({ kind: "count", k, pre: snap(toks), best: { a, b, c: bestC }, table,
+                  tokCount, vocabSize: vocab.length });
+    const id = vocab.length;
+    vocab.push(vocab[a] + vocab[b]);
+    merges.push({ a, b, id, count: bestC });
+    const nt = [];
+    for (let i = 0; i < toks.length; i++) {
+      if (toks[i] === a && toks[i + 1] === b) { nt.push(id); i++; } else nt.push(toks[i]);
+    }
+    toks = nt;
+    const tc = countTok(toks);
+    curve.push(tc);
+    frames.push({ kind: "merge", k, pre: snap(toks), best: { a, b, c: bestC }, table, newId: id,
+                  tokCount: tc, vocabSize: vocab.length });
+  }
+  cur = 0;
+  $("progress").max = frames.length - 1;
+  renderList();
+  renderFrame(0);
+}
+function countTok(t) { let n = 0; for (const x of t) if (x >= 0) n++; return n; }
+
+/* ---------- 描画 ---------- */
+function tkHtml(id, cls) {
+  const s = vocab[id], l = [...s].length;
+  const c = cls || (l >= 5 ? "l5" : l >= 2 ? "l" + l : "");
+  return `<span class="tk ${c}">${esc(disp(s))}</span>`;
+}
+function renderTokens(f) {
+  const t = f.pre;
+  let h = "";
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] < 0) { h += `<span class="nl"></span>`; continue; }
+    if (f.kind === "count" && t[i] === f.best.a && t[i + 1] === f.best.b) {
+      h += `<span class="pg">${tkHtml(t[i])}${tkHtml(t[i + 1])}</span>`; i++;
+    } else if (f.kind === "merge" && t[i] === f.newId) {
+      h += tkHtml(t[i], "new");
+    } else h += tkHtml(t[i]);
+  }
+  $("tokbox").innerHTML = h;
+}
+function renderTable(f) {
+  if (!f.table) { $("ptable").innerHTML = `<p class="note">（▶ で併合を始めると、ここにペアの出現回数が出ます）</p>`; return; }
+  const max = f.table[0].c;
+  $("ptable").innerHTML = f.table.map(r => {
+    const best = r.a === f.best.a && r.b === f.best.b;
+    return `<div class="prow ${best ? "best" : ""}"><div class="lab">${tkHtml(r.a)}<span class="pl">＋</span>${tkHtml(r.b)}</div>
+      <div class="bar"><i style="width:${(r.c / max * 100).toFixed(1)}%"></i></div><div class="n">${r.c}</div></div>`;
+  }).join("");
+}
+function renderFrame(i) {
+  cur = i;
+  const f = frames[i];
+  renderTokens(f);
+  renderTable(f);
+  const q = s => `「${esc(disp(s))}」`;
+  let badge, msg;
+  if (f.kind === "init") {
+    badge = `<span class="badge">初期状態</span>`;
+    msg = `文章を<b>1文字ずつ</b>のトークンに分けた。語彙は出てきた文字 ${V0} 種だけ。`;
+  } else if (f.kind === "count") {
+    badge = `<span class="badge count">${f.k} 回目：数える</span>`;
+    msg = `隣り合うペアを全部数えると、${q(vocab[f.best.a])}＋${q(vocab[f.best.b])} が <b>${f.best.c} 回</b>で最多（黄色の部分）。これを1つにまとめる。`;
+  } else {
+    badge = `<span class="badge merge">${f.k} 回目：併合</span>`;
+    msg = `${q(vocab[f.best.a])}＋${q(vocab[f.best.b])} → 新トークン <b>${q(vocab[f.newId])}</b>（語彙 ${f.vocabSize} 個）。文章が短くなった。`;
+  }
+  $("desc").innerHTML = badge + `<span>${msg}</span>`;
+  $("ptitle").textContent = f.kind === "init" ? "隣り合うペアの出現回数" :
+    `隣り合うペアの出現回数（${f.k} 回目の時点・上位10）`;
+  // 統計
+  const k = f.k - (f.kind === "count" ? 1 : 0);   // 併合済み回数
+  const done = f.kind === "count" ? f.k - 1 : f.k;
+  $("sChars").textContent = nChars.toLocaleString();
+  $("sV0").textContent = V0;
+  $("sK").textContent = done;
+  $("sV").textContent = V0 + done;
+  $("sTok").textContent = f.tokCount.toLocaleString();
+  $("sRatio").textContent = (f.tokCount / nChars).toFixed(3);
+  $("sAvg").textContent = (nChars / f.tokCount).toFixed(2);
+  // 履歴ハイライト
+  document.querySelectorAll(".mi").forEach(el => {
+    const m = +el.dataset.k;
+    el.classList.toggle("cur", m === f.k && f.kind !== "init");
+    el.classList.toggle("future", m > done && !(m === f.k && f.kind === "count"));
+  });
+  const ce = document.querySelector(".mi.cur");
+  if (ce) { const L = $("mlist"); L.scrollTop = Math.max(0, ce.offsetTop - L.clientHeight / 2); }
+  else if (f.kind === "init") $("mlist").scrollTop = 0;
+  drawCurve(done);
+  $("progress").value = i;
+  $("stepLabel").textContent = `${i} / ${frames.length - 1}`;
+  $("bPrev").disabled = $("bFirst").disabled = i === 0;
+  $("bNext").disabled = $("bLast").disabled = i === frames.length - 1;
+  renderTry(done);
+  renderCmp(done);
+}
+function renderList() {
+  $("mlist").innerHTML = merges.map((m, j) =>
+    `<div class="mi future" data-k="${j + 1}"><span class="no">#${j + 1}</span>${tkHtml(m.a)}<span class="arrow">＋</span>${tkHtml(m.b)}<span class="arrow">→</span><span class="mt">${esc(disp(vocab[m.id]))}</span><span class="cnt">×${m.count}</span></div>`
+  ).join("") || `<p class="note" style="padding:8px">併合なし</p>`;
+  document.querySelectorAll(".mi").forEach(el => el.onclick = () => { stop(); goTo(2 * (+el.dataset.k) - 1); });
+}
+function drawCurve(done) {
+  const c = $("curve"), g = c.getContext("2d"), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  const L = 44, R = 8, T = 10, B = 22;
+  const n = curve.length - 1, lo = Math.min(...curve) * 0.9, hi = curve[0];
+  const X = k => L + (n ? k / n : 0) * (W - L - R);
+  const Y = v => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  g.strokeStyle = "#d6dce8"; g.fillStyle = "#5d6b82"; g.font = "10px sans-serif"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(L, T); g.lineTo(L, H - B); g.lineTo(W - R, H - B); g.stroke();
+  g.textAlign = "right"; g.fillText(hi.toLocaleString(), L - 4, T + 8);
+  g.fillText(curve[n].toLocaleString(), L - 4, Y(curve[n]) + 3);
+  g.textAlign = "center"; g.fillText("0", L, H - 8); g.fillText(String(n), W - R - 4, H - 8);
+  g.fillText("併合回数", (L + W) / 2, H - 8);
+  g.strokeStyle = "#2f5d8a"; g.lineWidth = 2; g.beginPath();
+  curve.forEach((v, k) => k ? g.lineTo(X(k), Y(v)) : g.moveTo(X(k), Y(v))); g.stroke();
+  const k = Math.min(done, n);
+  g.fillStyle = "#ff6b6b"; g.beginPath(); g.arc(X(k), Y(curve[k]), 5, 0, 7); g.fill();
+}
+
+/* ---------- 学んだルールで分割（符号化） ---------- */
+function encode(s, upto) {
+  let out = [];
+  for (const ch of s) out.push(ch);
+  for (let j = 0; j < upto; j++) {
+    const A = vocab[merges[j].a], Bv = vocab[merges[j].b], N = vocab[merges[j].id];
+    const nt = [];
+    for (let i = 0; i < out.length; i++) {
+      if (out[i] === A && out[i + 1] === Bv) { nt.push(N); i++; } else nt.push(out[i]);
+    }
+    out = nt;
+  }
+  return out;
+}
+function renderTry(done) {
+  const s = $("tryIn").value.replace(/\n/g, "");
+  const t = encode(s, done);
+  const known = new Set(vocab.slice(0, V0));
+  $("tryOut").innerHTML = t.map(x => {
+    const l = [...x].length;
+    const unk = l === 1 && !known.has(x);
+    return `<span class="tk ${l >= 5 ? "l5" : l >= 2 ? "l" + l : ""}" ${unk ? 'style="border-style:dashed;color:#ff6b6b"' : ""}>${esc(disp(x))}</span>`;
+  }).join("");
+  $("tryInfo").textContent = `${[...s].length} 文字 → ${t.length} トークン（併合 ${done} 回）`;
+}
+
+
+/* ---------- 日本語 vs 英語 比較 ---------- */
+function quickTrain(txt, M, noSp) {
+  txt = normalize(txt);
+  const freq = new Map();
+  for (const ch of txt) if (ch !== "\n") freq.set(ch, (freq.get(ch) || 0) + 1);
+  const voc = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
+  const idOf = new Map(voc.map((c, i) => [c, i]));
+  const sp = new Set(voc.map((c, i) => /^[ 　\t]$/.test(c) ? i : -1).filter(i => i >= 0));
+  let t = [];
+  for (const ch of txt) t.push(ch === "\n" ? -1 : idOf.get(ch));
+  const nCh = t.filter(x => x >= 0).length, V0c = voc.length;
+  const curveT = [nCh], ms = [];
+  for (let k = 1; k <= M; k++) {
+    const cnt = new Map();
+    for (let i = 0; i + 1 < t.length; i++) {
+      const a = t[i], b = t[i + 1];
+      if (a < 0 || b < 0) continue;
+      if (noSp && (sp.has(a) || sp.has(b))) continue;
+      const key = a * 100000 + b;
+      cnt.set(key, (cnt.get(key) || 0) + 1);
+    }
+    let bk = -1, bc = 0;
+    for (const [key, c] of cnt) if (c > bc) { bc = c; bk = key; }
+    if (bc < 2) break;
+    const a = Math.floor(bk / 100000), b = bk % 100000, id = voc.length;
+    ms.push([voc[a], voc[b], voc[a] + voc[b], bc]);
+    voc.push(voc[a] + voc[b]);
+    const nt = [];
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === a && t[i + 1] === b) { nt.push(id); i++; } else nt.push(t[i]);
+    }
+    t = nt;
+    curveT.push(t.filter(x => x >= 0).length);
+  }
+  return { nCh, V0: V0c, curve: curveT, ms };
+}
+let cmpCache = null;
+function getCmp() {
+  const M = parseInt($("mRange").value, 10), ns = $("noSp").checked;
+  const key = M + "/" + ns;
+  if (!cmpCache || cmpCache.key !== key)
+    cmpCache = { key, jp: quickTrain(NEKO, M, ns), en: quickTrain(NEKO_EN, M, ns) };
+  return cmpCache;
+}
+function encodeMs(s, ms, upto) {
+  let out = [...s];
+  for (let j = 0; j < upto && j < ms.length; j++) {
+    const [A, Bv, N] = ms[j], nt = [];
+    for (let i = 0; i < out.length; i++) {
+      if (out[i] === A && out[i + 1] === Bv) { nt.push(N); i++; } else nt.push(out[i]);
+    }
+    out = nt;
+  }
+  return out;
+}
+const tkS = x => { const l = [...x].length; return `<span class="tk ${l >= 5 ? "l5" : l >= 2 ? "l" + l : ""}">${esc(disp(x))}</span>`; };
+function renderCmp(done) {
+  const C = getCmp(), J = C.jp, E = C.en;
+  const kj = Math.min(done, J.ms.length), ke = Math.min(done, E.ms.length);
+  const tj = J.curve[kj], te = E.curve[ke];
+  const rj = tj / J.nCh, re = te / E.nCh;
+  $("cmpMsg").innerHTML = done === 0
+    ? `どちらもまだ<b>1文字ずつ</b>です。▶ で併合を進めると、同じ回数でも<b>減り方が言語で違う</b>ことが見えてきます。`
+    : `併合 <b>${done}</b> 回で、日本語は元の <b>${(rj * 100).toFixed(1)}%</b>（${J.nCh.toLocaleString()} → ${tj.toLocaleString()} トークン）、英語は元の <b>${(re * 100).toFixed(1)}%</b>（${E.nCh.toLocaleString()} → ${te.toLocaleString()} トークン）。`;
+  const row = (k, a, b) => `<span class="k">${k}</span><span class="v">${a}</span><span class="v">${b}</span>`;
+  $("cmpTable").innerHTML =
+    `<span class="k"></span><span class="v plain" style="color:var(--text)">日本語</span><span class="v plain" style="color:var(--text)">英語</span>` +
+    row("文字数", J.nCh.toLocaleString(), E.nCh.toLocaleString()) +
+    row("文字の種類（初期語彙）", J.V0, E.V0) +
+    row(`語彙（併合 ${done} 回後）`, J.V0 + kj, E.V0 + ke) +
+    row("トークン数", tj.toLocaleString(), te.toLocaleString()) +
+    row("トークン数 ÷ 文字数", rj.toFixed(3), re.toFixed(3)) +
+    row("平均文字数 / トークン", (J.nCh / tj).toFixed(2), (E.nCh / te).toFixed(2));
+  const sj = "吾輩は猫である。名前はまだ無い。", se = "I am a cat. I do not have a name yet.";
+  const pj = encodeMs(sj, J.ms, done), pe = encodeMs(se, E.ms, done);
+  $("cmpSamples").innerHTML =
+    `<div class="cmpbox"><span class="lbl">日本語：${[...sj].length} 文字 → ${pj.length} トークン</span>${pj.map(tkS).join("")}</div>` +
+    `<div class="cmpbox"><span class="lbl">英語：${[...se].length} 文字 → ${pe.length} トークン</span>${pe.map(tkS).join("")}</div>`;
+  const last = (ms, k) => ms.slice(Math.max(0, k - 8), k).map((m, i, a) =>
+    `<div>#${k - a.length + i + 1} ${tkS(m[0])}＋${tkS(m[1])}→<b>${esc(disp(m[2]))}</b></div>`).join("") || "－";
+  $("cmpMerges").innerHTML = `<div class="cmpm">${last(J.ms, kj)}</div><div class="cmpm">${last(E.ms, ke)}</div>`;
+  // 推移グラフ（比率）
+  const c = $("cmpCurve"), g = c.getContext("2d"), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  const L = 40, R = 10, T = 12, B = 26, n = Math.max(J.curve.length, E.curve.length) - 1 || 1;
+  const rs = [...J.curve.map(v => v / J.nCh), ...E.curve.map(v => v / E.nCh)];
+  const lo = Math.min(...rs) * 0.95, hi = 1;
+  const X = k => L + k / n * (W - L - R), Y = v => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  g.strokeStyle = "#d6dce8"; g.fillStyle = "#5d6b82"; g.font = "11px sans-serif"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(L, T); g.lineTo(L, H - B); g.lineTo(W - R, H - B); g.stroke();
+  g.textAlign = "right"; g.fillText("1.0", L - 4, T + 8); g.fillText(lo.toFixed(2), L - 4, H - B);
+  g.textAlign = "center"; g.fillText("0", L, H - 10); g.fillText(String(n), W - R - 6, H - 10); g.fillText("併合回数", (L + W) / 2, H - 10);
+  const line = (cv, nc, col, k) => {
+    g.strokeStyle = col; g.lineWidth = 2; g.beginPath();
+    cv.forEach((v, i) => i ? g.lineTo(X(i), Y(v / nc)) : g.moveTo(X(i), Y(v / nc))); g.stroke();
+    g.fillStyle = col; g.beginPath(); g.arc(X(k), Y(cv[k] / nc), 5, 0, 7); g.fill();
+  };
+  line(J.curve, J.nCh, "#2f7fd9", kj); line(E.curve, E.nCh, "#e08a1e", ke);
+  g.textAlign = "left"; g.fillStyle = "#2f7fd9"; g.fillText("● 日本語", W - 150, T + 12);
+  g.fillStyle = "#e08a1e"; g.fillText("● 英語", W - 80, T + 12);
+}
+
+/* ---------- 制御 ---------- */
+function goTo(i) { renderFrame(Math.max(0, Math.min(frames.length - 1, i))); }
+function stop() { clearTimeout(timer); timer = null; $("bPlay").textContent = "▶ 再生"; }
+function delay() { return 1100 - parseInt($("speed").value, 10) * 100; }
+function tick() {
+  if (cur >= frames.length - 1) { stop(); return; }
+  goTo(cur + 1);
+  timer = setTimeout(tick, delay());
+}
+function play() {
+  if (timer) { stop(); return; }
+  if (cur >= frames.length - 1) goTo(0);
+  $("bPlay").textContent = "⏸ 停止";
+  timer = setTimeout(tick, delay());
+}
+function setInfo() {
+  const norm = normalize(srcText).length;
+  $("srcInfo").innerHTML = `学習テキスト：<b>${esc(srcName)}</b>（${norm.toLocaleString()} 字）` +
+    (truncated ? `　先頭 ${text.length.toLocaleString()} 字を使用` : "");
+}
+function rebuild() { stop(); build(); setInfo(); }
+function setSource(name, s) {
+  srcName = name; srcText = s;
+  if (normalize(s).length < 2) { alert("テキストが短すぎます。"); return; }
+  rebuild();
+}
+async function loadFile(file) {
+  const buf = await file.arrayBuffer();
+  let s;
+  try { s = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+  catch (e) { s = new TextDecoder("shift_jis").decode(buf); }
+  setSource(file.name, s.replace(/^﻿/, ""));
+}
+
+$("btnNeko").onclick = () => setSource("吾輩は猫である（第1章）", NEKO);
+$("btnNekoEn").onclick = () => setSource("I Am a Cat（第1章の英訳）", NEKO_EN);
+$("btnFile").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ""; };
+$("btnPaste").onclick = () => { const p = $("pastePanel"); p.style.display = p.style.display === "block" ? "none" : "block"; };
+$("btnPasteClose").onclick = () => $("pastePanel").style.display = "none";
+$("btnPasteGo").onclick = () => { setSource("貼り付けたテキスト", $("pasteArea").value); };
+$("size").onchange = rebuild;
+$("noSp").onchange = rebuild;
+$("mRange").oninput = () => $("mVal").textContent = $("mRange").value;
+$("mRange").onchange = rebuild;
+$("tryIn").oninput = () => { const f = frames[cur]; renderTry(f.kind === "count" ? f.k - 1 : f.k); };
+$("bFirst").onclick = () => { stop(); goTo(0); };
+$("bPrev").onclick = () => { stop(); goTo(cur - 1); };
+$("bNext").onclick = () => { stop(); goTo(cur + 1); };
+$("bLast").onclick = () => { stop(); goTo(frames.length - 1); };
+$("bPlay").onclick = play;
+$("progress").oninput = e => { stop(); goTo(+e.target.value); };
+document.addEventListener("keydown", e => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && document.activeElement.type !== "range") return;
+  if (e.key === "ArrowRight") { stop(); goTo(cur + 1); e.preventDefault(); }
+  else if (e.key === "ArrowLeft") { stop(); goTo(cur - 1); e.preventDefault(); }
+  else if (e.key === " ") { play(); e.preventDefault(); }
+});
+rebuild();
+</script>
+</body>
+</html>
