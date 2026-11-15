@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>エラトステネスのふるい — 倍数を消して素数を残す</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --frontier:#ffd24a; --current:#ff6b6b; --path:#4ade80; --goal:#c084fc; --visited:#2f5d8a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select, input[type=number] { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; width:90px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  button.small { padding:6px 10px; font-size:12px; }
+  .spacer { flex:1; }
+  .tabs { display:flex; gap:0; }
+  .tabs button { border-radius:0; border-right-width:0; }
+  .tabs button:first-child { border-radius:8px 0 0 8px; }
+  .tabs button:last-child { border-radius:0 8px 8px 0; border-right-width:1px; }
+  .tabs button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .presets { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:12px; color:var(--muted); }
+
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  .desc { margin-top:4px; min-height:44px; font-size:15px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .desc .badge.sub { background:var(--current); color:#fff; border-color:var(--current); }
+  .desc .badge.done { background:var(--path); color:#06122a; border-color:var(--path); }
+  .desc .badge.init { background:var(--frontier); color:#06122a; border-color:var(--frontier); }
+
+  #tokens { align-self:stretch; background:#f7f9fc; border-radius:8px; padding:14px; min-height:260px; }
+  .trow { margin-bottom:16px; }
+  .trow .tl { font-weight:700; font-size:15px; margin-bottom:6px; font-variant-numeric:tabular-nums; }
+  .trow .tl.a { color:var(--accent); } .trow .tl.b { color:#9b5de0; }
+  .tk { display:inline-flex; align-items:center; justify-content:center; width:var(--tk,34px); height:var(--tk,34px);
+    margin:2px; border-radius:6px; font-size:var(--tkf,22px); border:2px solid transparent; transition:all .15s; }
+  .tk.alive { background:#fff; border-color:var(--line); }
+  .tk.alive.a { border-color:#9cc3f0; } .tk.alive.b { border-color:#d9b8f7; }
+  .tk.gone { border:2px solid var(--current); background:#ffe9e9; opacity:.6; }
+  .tk.empty { border:2px dashed var(--line); }
+  .tk.empty::after { content:""; }
+  .tk.fin { border-color:var(--path); background:#e6fbee; }
+  .msg { color:var(--muted); font-size:14px; padding:30px 10px; text-align:center; }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+  pre.code { margin:0; font-family:Consolas,monospace; font-size:13px; line-height:1.7; }
+  pre.code span { display:block; padding:0 6px; border-radius:5px; }
+  pre.code span.hl { background:#fff3c4; outline:1px solid var(--frontier); }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+  #log { max-height:210px; overflow-y:auto; font-family:Consolas,monospace; font-size:12.5px; }
+  #log div { padding:2px 6px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  #log div:hover { background:var(--panel2); }
+  #log div.cur { background:#ffe9e9; outline:1px solid var(--current); }
+  #log div.fin { background:#e6fbee; outline:1px solid var(--path); }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:3px; display:inline-block; flex:none; border:1px solid #0008; }
+
+  .playbar { flex-basis:100%; border-top:1px solid var(--line); padding-top:14px;
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .playbar input[type=range] { flex:1; min-width:160px; accent-color:var(--accent); }
+  #stepLabel { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; min-width:80px; text-align:right; }
+  .speed { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .speed input { width:90px; accent-color:var(--accent); }
+
+  .num-note { font-variant-numeric:tabular-nums; }
+  #primes { align-self:stretch; background:#f7f9fc; border-radius:8px; padding:10px 12px; font-size:13px;
+    font-variant-numeric:tabular-nums; min-height:44px; word-break:break-all; }
+  #primes b { color:#1f9d55; }
+  .chk { display:flex; align-items:center; gap:6px; font-size:13px; padding-bottom:8px; cursor:pointer; }
+  .chk input { width:auto; }
+  table.cmp { width:100%; border-collapse:collapse; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  table.cmp th, table.cmp td { padding:4px 6px; border-bottom:1px solid var(--line); text-align:right; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align:left; }
+  table.cmp th { background:var(--accent); color:#06122a; font-weight:600; }
+  table.cmp tr.on td { background:#fff3c4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>エラトステネスのふるい</h1>
+  <span class="sub">2 から N までの数を並べ、小さい素数の倍数を順に消していく。最後に残った数が素数</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field"><label>N（ここまでの素数を探す）</label>
+      <select id="selN"><option>30</option><option>50</option><option selected>100</option><option>200</option><option>400</option></select></div>
+    <label class="chk"><input type="checkbox" id="optSq"> p×p から消す（最適化）</label>
+    <button class="primary" id="btnSet">最初から</button>
+    <div class="spacer"></div>
+    <div class="speed"><label for="speed">速度</label><input type="range" id="speed" min="1" max="10" value="5"></div>
+    <div class="playbar">
+      <button id="bFirst">⏮</button>
+      <button id="bPrev">◀ 戻る</button>
+      <button id="bPlay" class="primary">▶ 再生</button>
+      <button id="bNext">次へ ▶</button>
+      <button id="bLast">⏭</button>
+      <input type="range" id="progress" min="0" max="0" value="0">
+      <span id="stepLabel">0 / 0</span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="stage">
+      <canvas id="cv" width="760" height="500"></canvas>
+      <div class="desc"><span class="badge" id="badge"></span><span id="desc"></span></div>
+      <div id="primes"></div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>現在の状態</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="sP" style="color:var(--current)">-</div><div class="lab">今の素数 p</div></div>
+          <div class="stat"><div class="num" id="sPr" style="color:#1f9d55">0</div><div class="lab">見つかった素数</div></div>
+          <div class="stat"><div class="num" id="sOps">0</div><div class="lab">消した回数</div></div>
+          <div class="stat"><div class="num" id="sDup" style="color:#c27c00">0</div><div class="lab">二重に消した回数</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>アルゴリズム</h3>
+<pre class="code" id="code"></pre>
+        <div class="note">「消えていない最小の数」は必ず素数。その倍数をすべて消す、を繰り返す。</div>
+      </div>
+      <div class="card">
+        <h3>素数ごとの記録（クリックでジャンプ）</h3>
+        <div id="log"></div>
+      </div>
+      <div class="card">
+        <h3>消した回数の比較</h3>
+        <div id="cmp"></div>
+        <div class="note">p×p から消すと、p の倍数のうち p 未満の数との積（すでに消えている数）を省ける。p×p &gt; N になったら、残りはすべて素数。</div>
+      </div>
+      <div class="card">
+        <h3>凡例</h3>
+        <div class="legend">
+          <span><i style="background:#fff"></i>まだ未確定</span>
+          <span><i style="background:#4ade80"></i>素数</span>
+          <span><i style="background:#ff6b6b"></i>今の素数 p</span>
+          <span><i style="background:#ffd24a"></i>今消した数</span>
+          <span><i style="background:#dfe4ee"></i>合成数（消えた）</span>
+          <span><i style="background:#ffb86b"></i>二重に消した数</span>
+        </div>
+        <div class="note">赤い点線の枠は、これから p が消す倍数の予告。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let frames = [], cur = 0, timer = null, N = 100, useSq = false;
+
+/* ---- 篩を走らせて操作ごとに記録（count だけ欲しい時は rec=false） ---- */
+function sieve(n, sq, rec){
+  const s = new Uint8Array(n + 1);        // 0=未確定 1=素数 2=合成数
+  const fr = [];
+  let ops = 0, dup = 0, pc = 0;
+  const snap = (o) => { if (rec) fr.push(Object.assign({ s: s.slice(), ops, dup, pc }, o)); };
+  snap({ t:'init' });
+  let p = 2;
+  for (; p <= n; p++){
+    if (s[p] !== 0) continue;
+    const start = sq ? p * p : 2 * p;
+    if (start > n) break;
+    s[p] = 1; pc++;
+    const mult = []; for (let m = start; m <= n; m += p) mult.push(m);
+    snap({ t:'pick', p, start, cnt:mult.length });
+    for (const m of mult){
+      ops++;
+      const was = s[m];
+      if (was === 2) dup++;
+      s[m] = 2;
+      snap({ t:'cross', p, m, dupe: was === 2 });
+    }
+  }
+  let rest = 0;
+  for (let i = 2; i <= n; i++) if (s[i] === 0){ s[i] = 1; pc++; rest++; }
+  snap({ t:'done', rest, p });
+  return rec ? fr : { ops, dup, pc };
+}
+
+function rebuild(){
+  stop();
+  N = +$('selN').value; useSq = $('optSq').checked;
+  frames = sieve(N, useSq, true); cur = 0;
+  $('progress').max = frames.length - 1;
+  $('code').innerHTML =
+    `<span data-l="loop">for p in 2 .. N:</span>` +
+    `<span data-l="chk">    if p が消えていない:</span>` +
+    `<span data-l="pick">        p は素数（確定）</span>` +
+    `<span data-l="inner">        for m in ${useSq ? 'p×p' : '2p'}, +p, … ≤ N:</span>` +
+    `<span data-l="cross">            m を消す</span>` +
+    `<span data-l="done">残った数 = 素数${useSq ? '   # p×p > N で打ち切り' : ''}</span>`;
+  // ログ（素数ごと）
+  const lg = $('log'); lg.innerHTML = '';
+  frames.forEach((f, i) => {
+    if (f.t !== 'pick') return;
+    const d = document.createElement('div'); d.dataset.i = i; d.dataset.p = f.p;
+    d.textContent = `p=${f.p}: ${f.start} から ${f.cnt} 個消す`;
+    d.onclick = () => { stop(); goTo(i); };
+    lg.appendChild(d);
+  });
+  const dn = document.createElement('div'); dn.dataset.i = 'done'; dn.className = 'fin';
+  const last = frames[frames.length - 1];
+  dn.textContent = `残り ${last.rest} 個も素数（計 ${last.pc} 個）`;
+  dn.onclick = () => { stop(); goTo(frames.length - 1); };
+  lg.appendChild(dn);
+  // 比較表
+  const a = sieve(N, false, false), b = sieve(N, true, false);
+  $('cmp').innerHTML = `<table class="cmp"><tr><th>方式</th><th>消した回数</th><th>二重</th></tr>` +
+    `<tr class="${useSq ? '' : 'on'}"><td>2p から</td><td>${a.ops}</td><td>${a.dup}</td></tr>` +
+    `<tr class="${useSq ? 'on' : ''}"><td>p×p から</td><td>${b.ops}</td><td>${b.dup}</td></tr></table>` +
+    `<div class="note">N=${N}：素数は ${a.pc} 個</div>`;
+  renderFrame(0);
+}
+
+/* ---- 描画 ---- */
+function renderFrame(i){
+  cur = i;
+  const f = frames[i], last = i === frames.length - 1;
+  $('progress').value = i; $('stepLabel').textContent = `${i} / ${frames.length - 1}`;
+  $('sP').textContent = (f.t === 'init') ? '-' : f.p;
+  $('sPr').textContent = f.pc; $('sOps').textContent = f.ops; $('sDup').textContent = f.dup;
+
+  let badge, cls, txt;
+  if (f.t === 'init'){ badge='開始'; cls='init'; txt=`2 から ${N} までを並べた。1 は素数ではないので除く。まだどれも確定していない。`; }
+  else if (f.t === 'pick'){ badge='素数'; cls='sub';
+    txt=`消えていない最小の数 ${f.p} は素数。${f.p} の倍数を ${f.start} から ${f.cnt} 個消していく。`; }
+  else if (f.t === 'cross'){ badge='消す'; cls='sub';
+    txt = f.dupe ? `${f.m} は ${f.p} の倍数。すでに別の素数の倍数として消えている（二重）。`
+                 : `${f.m} は ${f.p} の倍数なので合成数。消す。`; }
+  else { badge='完了'; cls='done';
+    txt = f.rest ? `${useSq ? `p×p > ${N}` : `2p > ${N}`} になったので終了。残った ${f.rest} 個もすべて素数。${N} 以下の素数は計 ${f.pc} 個。`
+                 : `終了。${N} 以下の素数は計 ${f.pc} 個。`; }
+  $('badge').className = 'badge ' + cls; $('badge').textContent = badge; $('desc').textContent = txt;
+
+  document.querySelectorAll('#code span').forEach(s => s.classList.remove('hl'));
+  const hl = { init:'loop', pick:'pick', cross:'cross', done:'done' }[f.t];
+  document.querySelector(`#code span[data-l="${hl}"]`).classList.add('hl');
+  if (f.t === 'pick') document.querySelector('#code span[data-l="inner"]').classList.add('hl');
+
+  // ログ
+  const lg = $('log');
+  lg.querySelectorAll('div').forEach(d => d.classList.remove('cur'));
+  let el = null;
+  if (last) el = lg.querySelector('div[data-i="done"]');
+  else if (f.t !== 'init') el = lg.querySelector(`div[data-p="${f.p}"]`);
+  if (el){ el.classList.add('cur'); lg.scrollTop = Math.max(0, el.offsetTop - lg.offsetTop - lg.clientHeight/2); }
+
+  // 素数一覧
+  const ps = []; for (let k = 2; k <= N; k++) if (f.s[k] === 1) ps.push(k);
+  $('primes').innerHTML = `<b>素数（${ps.length} 個）</b>：` + (ps.length ? ps.join(', ') : '（まだなし）');
+
+  draw(f);
+}
+
+function draw(f){
+  const cols = N <= 30 ? 10 : N <= 100 ? 10 : N <= 200 ? 20 : 25;
+  const rows = Math.ceil((N + 1) / cols);
+  const cell = Math.min(60, Math.floor(730 / cols));
+  const W = cell * cols + 20, H = cell * rows + 20;
+  cv.width = Math.max(W, 200); cv.height = H;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const ox = 10, oy = 10, g = 3;
+  const fs = Math.max(9, Math.floor(cell * .42));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const futureP = (f.t === 'pick' || f.t === 'cross') ? f.p : 0;
+  const start = f.t === 'pick' ? f.start : (f.t === 'cross' ? (useSq ? f.p*f.p : 2*f.p) : 0);
+  for (let v = 1; v <= N; v++){
+    const x = ox + (v % cols) * cell, y = oy + Math.floor(v / cols) * cell;  // 1 を 2 列目スタートにせず 0 起点で配置
+    const st = v === 1 ? 2 : f.s[v];
+    let fill = '#ffffff', stroke = '#d6dce8', tc = '#1a2030', lw = 1;
+    if (st === 1){ fill = '#4ade80'; stroke = '#2faa5c'; tc = '#06122a'; }
+    else if (st === 2){ fill = '#dfe4ee'; stroke = '#d6dce8'; tc = '#9aa6bb'; }
+    const isP = (f.t === 'pick' || f.t === 'cross') && v === f.p;
+    const isM = f.t === 'cross' && v === f.m;
+    if (isP){ fill = '#ff6b6b'; stroke = '#d84a4a'; tc = '#fff'; }
+    if (isM){ fill = f.dupe ? '#ffb86b' : '#ffd24a'; stroke = '#c9a000'; tc = '#06122a'; lw = 2.5; }
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = lw;
+    rr(x + g/2, y + g/2, cell - g, cell - g, 6); ctx.fill(); ctx.stroke();
+    // 予告：これから消される倍数
+    if (futureP && v >= start && (v - futureP) % futureP === 0 && !isM && !isP && !(f.t === 'cross' && v < f.m)){
+      ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      rr(x + g/2 + 1, y + g/2 + 1, cell - g - 2, cell - g - 2, 5); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.fillStyle = tc; ctx.font = `${st === 1 || isP || isM ? 'bold ' : ''}${fs}px sans-serif`;
+    ctx.fillText(v, x + cell/2, y + cell/2);
+    if (st === 2 && !isM && !isP){   // 取り消し線
+      const w = ctx.measureText(v).width;
+      ctx.strokeStyle = '#9aa6bb'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + cell/2 - w/2 - 1, y + cell/2); ctx.lineTo(x + cell/2 + w/2 + 1, y + cell/2); ctx.stroke();
+    }
+  }
+}
+function rr(x, y, w, h, r){
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+/* ---- 制御 ---- */
+function goTo(i){ renderFrame(Math.max(0, Math.min(frames.length - 1, i))); }
+function delay(){ return Math.round(900 / Math.pow(1.6, +$('speed').value - 1)); }
+function play(){
+  if (timer) return;
+  if (cur >= frames.length - 1) goTo(0);
+  $('bPlay').textContent = '⏸ 停止';
+  const tick = () => {
+    if (cur >= frames.length - 1){ stop(); return; }
+    goTo(cur + 1); timer = setTimeout(tick, delay());
+  };
+  timer = setTimeout(tick, delay());
+}
+function stop(){ if (timer){ clearTimeout(timer); timer = null; } $('bPlay').textContent = '▶ 再生'; }
+function toggle(){ timer ? stop() : play(); }
+
+$('btnSet').onclick = rebuild;
+$('selN').onchange = rebuild; $('optSq').onchange = rebuild;
+$('bFirst').onclick = () => { stop(); goTo(0); };
+$('bPrev').onclick = () => { stop(); goTo(cur - 1); };
+$('bNext').onclick = () => { stop(); goTo(cur + 1); };
+$('bLast').onclick = () => { stop(); goTo(frames.length - 1); };
+$('bPlay').onclick = toggle;
+$('progress').oninput = e => { stop(); goTo(+e.target.value); };
+document.addEventListener('keydown', e => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.key === 'ArrowLeft'){ stop(); goTo(cur - 1); e.preventDefault(); }
+  else if (e.key === 'ArrowRight'){ stop(); goTo(cur + 1); e.preventDefault(); }
+  else if (e.key === ' '){ toggle(); e.preventDefault(); }
+});
+
+rebuild();
+</script>
+</body>
+</html>
