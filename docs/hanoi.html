@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ハノイの塔 — 体験しながら学ぶ再帰</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --frontier:#ffd24a; --current:#ff6b6b; --path:#4ade80; --goal:#c084fc; --visited:#2f5d8a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); letter-spacing:.04em; }
+  select, button { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .spacer { flex:1; }
+
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  #tcv { cursor:pointer; }
+  .cap { align-self:stretch; font-size:12px; color:var(--muted); margin-top:2px; }
+  .desc { margin-top:4px; min-height:44px; font-size:14px; align-self:stretch;
+    display:flex; align-items:center; gap:10px; }
+  .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .desc .badge.move { background:var(--current); color:#fff; border-color:var(--current); }
+  .desc .badge.enter { background:var(--frontier); color:#06122a; border-color:var(--frontier); }
+  .desc .badge.exit, .desc .badge.done { background:var(--path); color:#06122a; border-color:var(--path); }
+
+  .side { display:flex; flex-direction:column; gap:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { text-align:center; background:var(--panel2); border-radius:8px; padding:8px 4px; }
+  .stat .num { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:11px; color:var(--muted); }
+
+  #stack { font-family:Consolas,monospace; font-size:12.5px; min-height:176px; }
+  #stack .sl { padding:2px 6px; border-radius:6px; white-space:nowrap; }
+  #stack .sl.cur { background:#ffe9e9; outline:1px solid var(--current); }
+  #stack .ph { color:var(--accent); font-weight:700; margin-left:4px; }
+  #stack .empty { color:var(--muted); font-family:inherit; }
+
+  pre.code { margin:0; font-family:Consolas,monospace; font-size:12.5px; line-height:1.7; }
+  pre.code span { display:block; padding:0 6px; border-radius:5px; }
+  pre.code span.hl { background:#fff3c4; outline:1px solid var(--frontier); }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+
+  table.t { width:100%; border-collapse:collapse; font-size:13px; }
+  table.t td, table.t th { padding:4px 6px; border-bottom:1px solid var(--line); text-align:right; }
+  table.t th { color:var(--muted); font-weight:500; font-size:11px; }
+  table.t tr.me td { background:#e8f1fc; font-weight:700; }
+
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:50%; display:inline-block; flex:none; border:1px solid #0008; }
+
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+  .hint { font-size:12px; color:var(--muted); }
+
+  .tabs { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .tab { padding:10px 18px; border-radius:999px; font-size:14px; background:var(--panel); }
+  .tab.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .tab.on:hover:not(:disabled){ background:#1f6bc4; }
+  #pcv { cursor:pointer; touch-action:manipulation; }
+  .msg { align-self:stretch; min-height:46px; padding:10px 14px; border-radius:10px;
+    background:var(--panel2); font-size:14px; }
+  .msg.ng { background:#ffe9e9; outline:1px solid var(--current); }
+  .msg.ok { background:#e3f8ec; outline:1px solid var(--path); }
+  .msg.hint { background:#fff3c4; outline:1px solid var(--frontier); }
+  .pbtns { display:flex; gap:10px; flex-wrap:wrap; align-self:stretch; }
+  .mission { font-size:13.5px; line-height:1.7; }
+  .mission b { color:var(--accent); }
+  #hist { font-family:Consolas,monospace; font-size:12px; color:var(--muted); word-break:break-all; max-height:90px; overflow:auto; }
+  .q { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
+  .q h3 { margin:0 0 10px; font-size:15px; }
+  .q .opts { display:flex; gap:10px; flex-wrap:wrap; }
+  .q .opts button.right { background:#c9f3da; border-color:var(--path); }
+  .q .opts button.wrong { background:#ffd9d9; border-color:var(--current); }
+  .q .exp { margin-top:10px; font-size:13px; color:var(--text); display:none; }
+  #score { font-size:16px; font-weight:700; margin:6px 0 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗼 ハノイの塔 — 体験しながら学ぶ再帰</h1>
+  <span class="sub">①自分で解く → ②再帰で解く様子を見る → ③確かめる</span>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab on" data-tab="play">① 自分で解いてみる</button>
+    <button class="tab" data-tab="viz">② 再帰で解く様子を見る</button>
+    <button class="tab" data-tab="quiz">③ 確かめクイズ</button>
+  </div>
+  <div class="controls" id="nbar">
+    <div class="field">
+      <label>円盤の枚数 n（共通）</label>
+      <select id="nsel">
+        <option>1</option><option>2</option><option selected>3</option><option>4</option>
+        <option>5</option><option>6</option><option>7</option>
+      </select>
+    </div>
+    <span class="hint">ルール：①1回に1枚だけ動かす　②小さい円盤の上に大きい円盤は置けない　目標：A の全部を C へ</span>
+  </div>
+
+  <!-- ===== ① 体験 ===== -->
+  <div id="modePlay">
+    <div class="layout">
+      <div class="stage">
+        <canvas id="pcv" width="760" height="290"></canvas>
+        <div class="msg" id="pmsg"></div>
+        <div class="pbtns">
+          <button id="pUndo">↩ 1手戻す</button>
+          <button id="pReset">🔄 やり直し</button>
+          <button id="pHint">💡 ヒント（次の一手と理由）</button>
+          <button id="pToViz" class="primary" style="display:none">② 再帰で解く様子を見る ▶</button>
+        </div>
+        <div class="cap">柱をクリックで一番上の円盤を持ち上げ、動かしたい柱をクリックで置きます。</div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h3>🎯 手数</h3>
+          <div class="stats">
+            <div class="stat"><div class="num" id="pMoves">0</div><div class="lab">あなたの手数</div></div>
+            <div class="stat"><div class="num" id="pMin">0</div><div class="lab">最短手数</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>🧭 ミッション</h3>
+          <div class="mission" id="mission"></div>
+        </div>
+        <div class="card">
+          <h3>✅ クリア記録（最小手数 / 最短）</h3>
+          <table class="t" id="rec"></table>
+          <div class="note">n を 1→2→3→4 と増やして、手数の増え方に注目してみましょう。</div>
+        </div>
+        <div class="card">
+          <h3>📝 あなたの手順</h3>
+          <div id="hist">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modeViz" style="display:none">
+  <div class="controls">
+    <div class="field">
+      <label>ステップの細かさ</label>
+      <select id="fine">
+        <option value="1" selected>呼び出し・移動・完了をすべて</option>
+        <option value="0">円盤の移動だけ</option>
+      </select>
+    </div>
+    <div class="spacer"></div>
+    <div class="field">
+      <label>再生速度</label>
+      <input type="range" id="speed" min="1" max="60" value="28" style="width:130px;accent-color:var(--accent)">
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="stage">
+        <canvas id="cv" width="760" height="290"></canvas>
+        <div class="desc">
+          <span class="badge" id="badge">準備完了</span>
+          <span id="descText"></span>
+        </div>
+        <canvas id="tcv" width="760" height="260"></canvas>
+        <div class="cap">▲ 再帰の呼び出しツリー。1つの丸＝1回の移動（数字は円盤の番号）。左から右へ読むと<b>手順そのもの</b>になります。丸をクリックでその呼び出しへジャンプ。</div>
+      </div>
+      <div class="playbar">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1手戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1手進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
+      <div class="hint"><kbd>←</kbd> <kbd>→</kbd> 1ステップ　<kbd>Space</kbd> 再生/停止</div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3>📊 進み具合</h3>
+        <div class="stats">
+          <div class="stat"><div class="num" id="sMoves">0</div><div class="lab">移動した回数</div></div>
+          <div class="stat"><div class="num" id="sTotal">0</div><div class="lab">必要な総移動 2ⁿ−1</div></div>
+          <div class="stat"><div class="num" id="sCalls">0</div><div class="lab">呼び出した回数</div></div>
+          <div class="stat"><div class="num" id="sDepth">0</div><div class="lab">いまの再帰の深さ</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📚 コールスタック（いま実行中の呼び出し）</h3>
+        <div id="stack"></div>
+        <div class="note">① 前半の再帰中　② 最大の円盤を移動　③ 後半の再帰中</div>
+      </div>
+
+      <div class="card">
+        <h3>🧩 再帰の式</h3>
+<pre class="code" id="code"><span>def hanoi(n, 出発, 到着, 経由):</span>
+<span>    if n == 0: return</span>
+<span>    hanoi(n-1, 出発, 経由, 到着)  # ①</span>
+<span>    move(n, 出発 → 到着)         # ②</span>
+<span>    hanoi(n-1, 経由, 到着, 出発)  # ③</span></pre>
+        <div class="note">n 枚＝(n−1 枚)×2 回＋1 回。T(n) = 2·T(n−1) + 1 より <b>T(n) = 2ⁿ − 1</b>。</div>
+      </div>
+
+      <div class="card">
+        <h3>📈 枚数と移動回数</h3>
+        <table class="t" id="tbl"></table>
+        <div class="note">n=64 なら 2⁶⁴−1 手。1秒1手でも約 5800 億年。</div>
+      </div>
+
+      <div class="card">
+        <h3>🎨 見方</h3>
+        <div class="legend">
+          <span><i style="background:#ff6b6b"></i>いま実行中の呼び出し</span>
+          <span><i style="background:#ffd24a"></i>呼び出し中（スタック上）</span>
+          <span><i style="background:#4ade80"></i>完了</span>
+          <span><i style="background:#d6dce8"></i>まだ呼ばれていない</span>
+        </div>
+        <div class="note">盤面では、いまの呼び出しが扱う「上の k 枚」だけが濃く、それより大きな円盤は薄く表示されます（＝部分問題の範囲）。</div>
+      </div>
+    </div>
+  </div>
+  </div><!-- /modeViz -->
+
+  <!-- ===== ③ クイズ ===== -->
+  <div id="modeQuiz" style="display:none">
+    <div id="score">正解 0 / 0</div>
+    <div id="quizList"></div>
+    <div class="note">迷ったら ① で n を変えて実際に動かす、② でツリーを見直してみましょう。</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const PEG = ['A','B','C'];
+const DISK_COL = ['#ff8a65','#ffd24a','#4ade80','#38bdf8','#2f7fd9','#a78bfa','#f472b6'];
+const ROLE_COL = {f:'#ff8a65', t:'#4ade80', v:'#9aa6bb'};
+
+let N=3, FINE=true, frames=[], nodes=[], cur=0, timer=null;
+
+/* ===== フレーム録画：再帰をそのまま走らせて全ステップを記録 ===== */
+function build(){
+  frames=[]; nodes=[];
+  const total=(1<<N)-1;
+  const pegOf=new Uint8Array(N+1);          // pegOf[d] = 円盤 d がいる柱（0=A,1=B,2=C）
+  const status=new Uint8Array(total);       // 0=未呼出 1=実行中 2=完了
+  const phase=new Uint8Array(total);        // 0=①前半 1=②移動 2=③後半
+  const stack=[]; let moveNo=0;
+
+  function snap(kind,text,moved){
+    frames.push({kind, text, moved, moveNo,
+      peg:pegOf.slice(), st:status.slice(),
+      stack:stack.slice(), stph:stack.map(id=>phase[id])});
+  }
+  const lab=(nd)=>`hanoi(${nd.n}, ${PEG[nd.f]}→${PEG[nd.t]}, 経由${PEG[nd.v]})`;
+
+  function rec(n,f,t,v,parent){
+    const id=nodes.length;
+    const nd={n,f,t,v,parent,id,idx:0,enter:0};
+    nodes.push(nd);
+    status[id]=1; phase[id]=(n>1?0:1); stack.push(id);
+    if(FINE){
+      nd.enter=frames.length;
+      snap('enter', `${lab(nd)} を呼び出し。`+(n>1
+        ?`まず上の ${n-1} 枚を ${PEG[f]}→${PEG[v]} へ（①）。`
+        :`1枚だけなので、そのまま動かせる。`), -1);
+    }
+    if(n>1) rec(n-1,f,v,t,id);
+    phase[id]=1; pegOf[n]=t; moveNo++; nd.idx=moveNo;
+    if(!FINE) nd.enter=frames.length;
+    snap('move', `② 円盤 ${n} を ${PEG[f]}→${PEG[t]} へ移動（${moveNo}手目）。`+(n>1
+      ?`上の ${n-1} 枚は ${PEG[v]} に退避済み。`:''), n);
+    if(n>1){ phase[id]=2; rec(n-1,v,t,f,id); }
+    status[id]=2;
+    if(FINE) snap('exit', `${lab(nd)} 完了。`+(n>1
+      ?`円盤 1〜${n} がまとめて ${PEG[f]}→${PEG[t]} へ移った。`:''), -1);
+    stack.pop();
+  }
+  // 先頭フレーム
+  snap('start', `円盤 ${N} 枚を A から C へ。hanoi(${N}, A→C, 経由B) から始めます。`, -1);
+  rec(N,0,2,1,-1);
+  snap('done', `完了！ ${total} 手（＝2^${N}−1）で全円盤が C に移りました。呼び出しは ${total} 回。`, -1);
+  frames[0].moveNo=0;
+  // 先頭フレームは初期配置（全て A）
+  frames[0].peg=new Uint8Array(N+1);
+}
+
+/* ===== 描画：柱と円盤 ===== */
+const cv=$('cv'), g=cv.getContext('2d');
+function drawPegs(fr){ drawPegsOn(g,cv,fr); }
+function drawPegsOn(g,cv,fr){
+  const W=cv.width,H=cv.height;
+  g.clearRect(0,0,W,H);
+  const baseY=H-52, px=[130,380,630];
+  const topNode = fr.stack.length? nodes[fr.stack[fr.stack.length-1]] : null;
+  const act = topNode? topNode.n : N;
+  // 土台
+  g.fillStyle='#c5cddc'; g.fillRect(24,baseY,W-48,10);
+  if(fr.selPeg>=0){ g.fillStyle='#ffd24a33'; g.fillRect(px[fr.selPeg]-115,24,230,baseY-24); }
+  // 柱
+  const poleH=Math.min(230, 40+N*30);
+  px.forEach(x=>{ g.fillStyle='#9aa6bb'; g.fillRect(x-4,baseY-poleH,8,poleH); });
+  // 柱ラベルと役割
+  px.forEach((x,i)=>{
+    g.fillStyle='#1a2030'; g.font='bold 16px sans-serif'; g.textAlign='center';
+    g.fillText(PEG[i], x, baseY+30);
+    if(topNode){
+      const role = i===topNode.f?'f':i===topNode.t?'t':'v';
+      const txt = role==='f'?'出発':role==='t'?'到着':'経由';
+      g.fillStyle=ROLE_COL[role]; g.beginPath();
+      g.roundRect(x+14,baseY+16,40,18,9); g.fill();
+      g.fillStyle='#06122a'; g.font='11px sans-serif'; g.fillText(txt,x+34,baseY+29);
+    }
+  });
+  // 円盤
+  const dh=Math.min(26, (poleH-10)/N), maxW=210, minW=46;
+  for(let p=0;p<3;p++){
+    let lvl=0;
+    for(let d=N; d>=1; d--){
+      if(fr.peg[d]!==p) continue;
+      const w = N===1? 120 : minW+(d-1)/(N-1)*(maxW-minW);
+      const lifted = fr.lift===d;
+      const x=px[p]-w/2, y= lifted ? baseY-poleH-dh-6 : baseY-(lvl+1)*dh;
+      g.globalAlpha = d<=act? 1 : 0.28;
+      g.fillStyle=DISK_COL[(d-1)%DISK_COL.length];
+      g.beginPath(); g.roundRect(x,y+1,w,dh-2,6); g.fill();
+      g.lineWidth = (fr.moved===d)? 3 : 1;
+      g.strokeStyle = (fr.moved===d)? '#ff3b3b' : '#0006';
+      g.stroke();
+      g.fillStyle='#06122a'; g.font='bold 12px sans-serif'; g.textAlign='center';
+      g.fillText(d, px[p], y+dh/2+4);
+      g.globalAlpha=1;
+      if(!lifted) lvl++;
+    }
+  }
+  // 部分問題の説明
+  if(topNode){
+    g.fillStyle='#2f7fd9'; g.font='bold 13px sans-serif'; g.textAlign='left';
+    g.fillText(`いまの部分問題：円盤 1〜${topNode.n}（${topNode.n}枚）を ${PEG[topNode.f]}→${PEG[topNode.t]}`, 20, 24);
+  }
+}
+
+/* ===== 描画：再帰の呼び出しツリー（x = 移動番号 ⇒ 左から右が手順） ===== */
+const tcv=$('tcv'), tg=tcv.getContext('2d');
+let treePos=[]; // {x,y,r}
+function layoutTree(){
+  const W=tcv.width,H=tcv.height, padX=24, padT=28, padB=22;
+  const total=(1<<N)-1;
+  const dy = N>1? Math.min(46,(H-padT-padB)/(N-1)) : 0;
+  const sp=(W-2*padX)/total;
+  const r=Math.max(2.5, Math.min(13, sp*0.46));
+  treePos=nodes.map(nd=>({ x:padX+(nd.idx-0.5)*sp, y:padT+(N-nd.n)*dy, r }));
+}
+function drawTree(fr){
+  const W=tcv.width,H=tcv.height;
+  tg.clearRect(0,0,W,H);
+  // 段ラベル
+  tg.fillStyle='#5d6b82'; tg.font='11px sans-serif'; tg.textAlign='left';
+  const dy = N>1? Math.min(46,(H-28-22)/(N-1)) : 0;
+  for(let n=N;n>=1;n--) tg.fillText(`円盤${n}`, 2, 28+(N-n)*dy-(N>=6?6:10));
+  const top = fr.stack.length? fr.stack[fr.stack.length-1] : -1;
+  const inStack=new Set(fr.stack);
+  // エッジ
+  nodes.forEach(nd=>{
+    if(nd.parent<0) return;
+    const a=treePos[nd.parent], b=treePos[nd.id];
+    tg.strokeStyle = fr.st[nd.id]? '#8795ad' : '#d6dce8';
+    tg.lineWidth=1.2;
+    tg.beginPath(); tg.moveTo(a.x,a.y); tg.lineTo(b.x,b.y); tg.stroke();
+  });
+  // ノード
+  nodes.forEach(nd=>{
+    const p=treePos[nd.id], s=fr.st[nd.id];
+    let col='#d6dce8';
+    if(s===2) col='#4ade80';
+    if(inStack.has(nd.id)) col='#ffd24a';
+    if(nd.id===top) col='#ff6b6b';
+    tg.fillStyle=col; tg.strokeStyle='#0007'; tg.lineWidth=1;
+    tg.beginPath(); tg.arc(p.x,p.y,p.r,0,Math.PI*2); tg.fill(); tg.stroke();
+    if(p.r>=7){
+      tg.fillStyle='#06122a'; tg.font=`bold ${Math.round(p.r*1.05)}px sans-serif`; tg.textAlign='center';
+      tg.fillText(nd.n,p.x,p.y+p.r*0.36);
+    }
+  });
+  // 現在の呼び出しの部分木（範囲）をなぞる帯
+  if(top>=0){
+    const kids=[]; (function walk(i){ kids.push(i); nodes.forEach(c=>{ if(c.parent===i) walk(c.id); }); })(top);
+    let x0=1e9,x1=-1e9; kids.forEach(i=>{ x0=Math.min(x0,treePos[i].x); x1=Math.max(x1,treePos[i].x); });
+    const y=treePos[top].y;
+    tg.strokeStyle='#ff6b6b'; tg.lineWidth=2; tg.setLineDash([5,4]);
+    tg.strokeRect(x0-treePos[top].r-3, y-treePos[top].r-5, (x1-x0)+2*treePos[top].r+6, H-(y-treePos[top].r-5)-8);
+    tg.setLineDash([]);
+  }
+}
+
+/* ===== サイドパネル ===== */
+function renderSide(fr){
+  const total=(1<<N)-1;
+  let calls=0; for(const s of fr.st) if(s) calls++;
+  $('sMoves').textContent=fr.moveNo;
+  $('sTotal').textContent=total;
+  $('sCalls').textContent=calls;
+  $('sDepth').textContent=fr.stack.length;
+
+  const stEl=$('stack');
+  if(!fr.stack.length) stEl.innerHTML='<div class="empty">（呼び出しなし）</div>';
+  else stEl.innerHTML=fr.stack.map((id,i)=>{
+    const nd=nodes[id], last=i===fr.stack.length-1;
+    const mark = nd.n===1 ? '' : ['①','②','③'][fr.stph[i]];
+    return `<div class="sl${last?' cur':''}" style="margin-left:${i*10}px">hanoi(${nd.n}, ${PEG[nd.f]}→${PEG[nd.t]}, ${PEG[nd.v]})<span class="ph">${mark}</span></div>`;
+  }).join('');
+
+  // コード行ハイライト
+  const lines=$('code').children;
+  for(const l of lines) l.classList.remove('hl');
+  if(fr.kind==='enter') lines[0].classList.add('hl');
+  else if(fr.kind==='move') lines[3].classList.add('hl');
+  else if(fr.kind==='exit') lines[1].classList.add('hl');
+}
+function buildTable(){
+  let h='<tr><th>n</th><th>T(n)=2ⁿ−1</th><th>T(n) = 2·T(n−1)+1</th></tr>';
+  for(let n=1;n<=7;n++){
+    h+=`<tr class="${n===N?'me':''}"><td>${n}</td><td>${(1<<n)-1}</td><td>${n===1?'1':`2×${(1<<(n-1))-1}+1`}</td></tr>`;
+  }
+  $('tbl').innerHTML=h;
+}
+
+/* ===== 制御 ===== */
+function renderFrame(i){
+  cur=i; const fr=frames[i];
+  drawPegs(fr); drawTree(fr); renderSide(fr);
+  const b=$('badge');
+  b.className='badge '+fr.kind;
+  b.textContent={start:'開始',enter:'呼び出し',move:'移動',exit:'完了',done:'終了'}[fr.kind];
+  $('descText').textContent=fr.text;
+  $('progress').value=i;
+  $('stepLabel').textContent=`${i} / ${frames.length-1}`;
+  $('prev').disabled=$('toStart').disabled=(i===0);
+  $('next').disabled=$('toEnd').disabled=(i===frames.length-1);
+}
+function goTo(i){ renderFrame(Math.max(0,Math.min(frames.length-1,i))); }
+function delay(){ return Math.max(25, 900-(+$('speed').value)*14); }
+function stop(){ clearTimeout(timer); timer=null; $('play').textContent='▶ 再生'; }
+function tick(){
+  if(cur>=frames.length-1){ stop(); return; }
+  goTo(cur+1);
+  timer=setTimeout(tick,delay());
+}
+function play(){
+  if(timer){ stop(); return; }
+  if(cur>=frames.length-1) goTo(0);
+  $('play').textContent='⏸ 一時停止';
+  timer=setTimeout(tick,delay());
+}
+function rebuild(){
+  stop();
+  N=+$('nsel').value; FINE=$('fine').value==='1';
+  build(); layoutTree(); buildTable(); resetPlay();
+  $('progress').max=frames.length-1;
+  goTo(0);
+}
+
+$('nsel').onchange=rebuild;
+$('fine').onchange=rebuild;
+$('toStart').onclick=()=>{stop();goTo(0);};
+$('prev').onclick=()=>{stop();goTo(cur-1);};
+$('next').onclick=()=>{stop();goTo(cur+1);};
+$('toEnd').onclick=()=>{stop();goTo(frames.length-1);};
+$('play').onclick=play;
+$('progress').oninput=e=>{stop();goTo(+e.target.value);};
+tcv.onclick=e=>{
+  const rc=tcv.getBoundingClientRect(), k=tcv.width/rc.width;
+  const x=(e.clientX-rc.left)*k, y=(e.clientY-rc.top)*k;
+  let best=-1,bd=1e9;
+  treePos.forEach((p,i)=>{ const d=Math.hypot(p.x-x,p.y-y); if(d<bd){bd=d;best=i;} });
+  if(best>=0 && bd<=Math.max(14,treePos[best].r+4)){ stop(); goTo(nodes[best].enter); }
+};
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='SELECT' || curTab!=='viz') return;
+  if(e.key==='ArrowRight'){ stop(); goTo(cur+1); e.preventDefault(); }
+  else if(e.key==='ArrowLeft'){ stop(); goTo(cur-1); e.preventDefault(); }
+  else if(e.key===' '){ play(); e.preventDefault(); }
+});
+
+/* ===== ① 体験モード ===== */
+const pcv=$('pcv'), pcg=pcv.getContext('2d');
+let pp=new Uint8Array(8), hist=[], sel=-1, best={}, curTab='play';
+const topDisk=p=>{ for(let d=1;d<=N;d++) if(pp[d]===p) return d; return 0; };
+function pmsg(t,cls){ const m=$('pmsg'); m.textContent=t; m.className='msg '+(cls||''); }
+const MISSION={
+  1:'まずは<b>1枚</b>。何手で終わるでしょう？',
+  2:'<b>2枚</b>。大きい円盤を動かすには、先に小さい円盤を<b>どこかへどける</b>必要があります。どこが「どける場所」でしょう？',
+  3:'<b>3枚</b>。最大の円盤を動かす<b>瞬間</b>、上の2枚はどの柱にいますか？ 最短は7手です。',
+  4:'<b>4枚</b>。3枚の解き方を<b>部品として使える</b>と気づけば、迷わず解けます（最短15手）。ヒントで「そのために…」の連なりも見てみましょう。',
+  5:'<b>5枚</b>以上は手で解くのが大変。「n枚 ＝ (n−1)枚を退避 → 最大を移動 → (n−1)枚を戻す」という考え方が必要になります。',
+};
+function drawPlay(){
+  const lift = sel>=0 ? topDisk(sel) : 0;
+  drawPegsOn(pcg,pcv,{peg:pp,stack:[],moved:-1,lift,selPeg:sel});
+  $('pMoves').textContent=hist.length;
+  $('pMin').textContent=(1<<N)-1;
+  $('hist').textContent=hist.length? hist.map(h=>`${h.d}:${PEG[h.f]}→${PEG[h.t]}`).join('  ') : '—';
+  $('mission').innerHTML=MISSION[Math.min(N,5)];
+  let h='<tr><th>n</th><th>最小手数</th><th>最短</th><th></th></tr>';
+  for(let n=1;n<=7;n++){
+    const b=best[n], m=(1<<n)-1;
+    h+=`<tr class="${n===N?'me':''}"><td>${n}</td><td>${b??'—'}</td><td>${m}</td><td>${b===m?'🏆':b?'✓':''}</td></tr>`;
+  }
+  $('rec').innerHTML=h;
+}
+function resetPlay(){
+  pp=new Uint8Array(N+1); hist=[]; sel=-1;
+  pmsg(`円盤 ${N} 枚を A から C へ運びます。まず動かしたい円盤がある柱をクリック。`);
+  $('pToViz').style.display='none';
+  drawPlay();
+}
+function playClick(p){
+  if(pp.every((v,i)=>i===0||v===2) && hist.length) return;
+  if(sel<0){
+    if(!topDisk(p)){ pmsg('その柱に円盤がありません。','ng'); return; }
+    sel=p; pmsg(`円盤 ${topDisk(p)} を持ち上げました。どの柱へ置きますか？`);
+  } else if(p===sel){
+    sel=-1; pmsg('持ち上げをやめました。');
+  } else {
+    const d=topDisk(sel), t=topDisk(p);
+    if(t && t<d){
+      pmsg(`置けません：円盤 ${d} は、より小さい円盤 ${t} の上には置けません。`,'ng');
+      sel=-1;
+    } else {
+      pp[d]=p; hist.push({d,f:sel,t:p}); sel=-1;
+      pmsg(`円盤 ${d} を ${PEG[hist[hist.length-1].f]}→${PEG[p]} へ（${hist.length}手目）`);
+      if(pp.every((v,i)=>i===0||v===2)) finishPlay();
+    }
+  }
+  drawPlay();
+}
+function finishPlay(){
+  const m=(1<<N)-1, n=hist.length;
+  best[N]=Math.min(best[N]??1e9,n);
+  pmsg(n===m
+    ? `🎉 クリア！ ${n}手＝最短（2^${N}−1）です。`+(N<4?` n を ${N+1} に増やして、最短手数がどう増えるか確かめよう。`:'')
+    : `クリア！ ${n}手。最短は ${m}手です。もっと少なくできる？（やり直し）`, 'ok');
+  if(N>=2) $('pToViz').style.display='';
+}
+function hintPlay(){
+  let k=N,t=2; const chain=[];
+  while(k>0){
+    if(pp[k]===t){ k--; continue; }
+    const o=3-pp[k]-t; let ok=true;
+    for(let d=1;d<k;d++) if(pp[d]!==o) ok=false;
+    chain.push(k===1?`円盤1 を ${PEG[t]} へ`:`円盤 1〜${k} を ${PEG[t]} へ`);
+    if(ok){
+      sel=-1; drawPlay();
+      pmsg('💡 目標：'+chain.join(' → そのためにまず、')+`。\nいま打つ手：円盤 ${k} を ${PEG[pp[k]]}→${PEG[t]}`,'hint');
+      $('pmsg').style.whiteSpace='pre-line';
+      return;
+    }
+    t=o; k--;
+  }
+  pmsg('すでに完成しています！');
+}
+pcv.onclick=e=>{
+  const rc=pcv.getBoundingClientRect(), x=(e.clientX-rc.left)*pcv.width/rc.width;
+  playClick(x<253?0:x<507?1:2);
+};
+$('pReset').onclick=resetPlay;
+$('pUndo').onclick=()=>{
+  if(!hist.length) return;
+  const h=hist.pop(); pp[h.d]=h.f; sel=-1;
+  pmsg('1手戻しました。'); $('pToViz').style.display='none'; drawPlay();
+};
+$('pHint').onclick=hintPlay;
+$('pToViz').onclick=()=>goTab('viz');
+
+/* ===== ③ クイズ ===== */
+const QUIZ=[
+  {q:'円盤 3 枚の最短手数は？', o:['5手','7手','8手','9手'], a:1,
+   e:'T(3)=2·T(2)+1=2×3+1=7。2^3−1 でもあります。'},
+  {q:'円盤 4 枚を A→C へ運ぶとき、最大の円盤 4 を動かす直前、上の 3 枚はどこにある？', o:['A（出発の柱）','B（経由の柱）','C（到着の柱）','バラバラ'], a:1,
+   e:'4 を C へ置くには、C も 4 の上も空いている必要があるので、3 枚はすべて「経由」の B に積まれています。これが再帰の①。'},
+  {q:'1 枚増やすと、最短手数はどうなる？', o:['+1 手','2 倍','2 倍 + 1 手','2 乗'], a:2,
+   e:'T(n)=2·T(n−1)+1。(n−1)枚を退避、最大を1手、(n−1)枚を戻す。ツリーの「根の1つ＋同じ形の部分木2つ」に対応します。'},
+  {q:'T(4) は？（T(3)=7）', o:['13','15','16','31'], a:1, e:'2×7+1=15。'},
+  {q:'円盤 10 枚の最短手数は？', o:['100','512','1023','1024'], a:2, e:'2^10−1=1023。1秒1手でも約17分。'},
+  {q:'呼び出しツリーで「円盤 1（一番小さい円盤）」の丸は、n=4 のとき全部で何個？', o:['1個','4個','8個','15個'], a:2,
+   e:'葉（一番下の段）は全体の半分強。n=4 の全 15 手のうち、円盤1 は 8 回動きます（1手おきに円盤1が動く）。'},
+];
+let qCorrect=0, qAnswered=0;
+function buildQuiz(){
+  qCorrect=qAnswered=0; $('score').textContent='正解 0 / '+QUIZ.length;
+  $('quizList').innerHTML=QUIZ.map((x,i)=>`<div class="q" id="q${i}"><h3>Q${i+1}. ${x.q}</h3>
+    <div class="opts">${x.o.map((t,j)=>`<button data-q="${i}" data-o="${j}">${t}</button>`).join('')}</div>
+    <div class="exp" id="e${i}"></div></div>`).join('');
+  document.querySelectorAll('#quizList button').forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.q, j=+b.dataset.o, x=QUIZ[i], box=$('q'+i);
+    if(box.dataset.done) return; box.dataset.done=1;
+    const bs=box.querySelectorAll('button');
+    bs[x.a].classList.add('right'); if(j!==x.a) b.classList.add('wrong');
+    $('e'+i).style.display='block'; $('e'+i).textContent=(j===x.a?'⭕ 正解。':'❌ 惜しい。')+x.e;
+    qAnswered++; if(j===x.a) qCorrect++;
+    $('score').textContent=`正解 ${qCorrect} / ${QUIZ.length}`+(qAnswered===QUIZ.length?'　おつかれさま！':'');
+  });
+}
+
+/* ===== タブ ===== */
+function goTab(name){
+  stop(); curTab=name;
+  $('modePlay').style.display=name==='play'?'':'none';
+  $('modeViz').style.display=name==='viz'?'':'none';
+  $('modeQuiz').style.display=name==='quiz'?'':'none';
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
+  if(name==='viz') goTo(cur);
+}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>goTab(b.dataset.tab));
+
+buildQuiz();
+rebuild();
+</script>
+</body>
+</html>
