@@ -79,7 +79,8 @@
   .legend span { display:inline-flex; align-items:center; gap:6px; }
   .legend i { width:13px; height:13px; border-radius:50%; display:inline-block; flex:none; border:1px solid #0008; }
 
-  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  .playbar { flex-basis:100%; border-top:1px solid var(--line); padding-top:14px;
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #progress { flex:1; min-width:180px; accent-color:var(--accent); }
   .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
   kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
@@ -100,13 +101,6 @@
   .mission { font-size:13.5px; line-height:1.7; }
   .mission b { color:var(--accent); }
   #hist { font-family:Consolas,monospace; font-size:12px; color:var(--muted); word-break:break-all; max-height:90px; overflow:auto; }
-  .q { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
-  .q h3 { margin:0 0 10px; font-size:15px; }
-  .q .opts { display:flex; gap:10px; flex-wrap:wrap; }
-  .q .opts button.right { background:#c9f3da; border-color:var(--path); }
-  .q .opts button.wrong { background:#ffd9d9; border-color:var(--current); }
-  .q .exp { margin-top:10px; font-size:13px; color:var(--text); display:none; }
-  #score { font-size:16px; font-weight:700; margin:6px 0 14px; }
 </style>
 </head>
 <body>
@@ -119,13 +113,12 @@
   <div class="tabs">
     <button class="tab on" data-tab="play">① 自分で解いてみる</button>
     <button class="tab" data-tab="viz">② 再帰で解く様子を見る</button>
-    <button class="tab" data-tab="quiz">③ 確かめクイズ</button>
   </div>
   <div class="controls" id="nbar">
     <div class="field">
       <label>円盤の枚数 n（共通）</label>
       <select id="nsel">
-        <option>1</option><option>2</option><option selected>3</option><option>4</option>
+        <option>1</option><option>2</option><option>3</option><option selected>4</option>
         <option>5</option><option>6</option><option>7</option>
       </select>
     </div>
@@ -173,19 +166,23 @@
 
   <div id="modeViz" style="display:none">
   <div class="controls">
-    <div class="field">
-      <label>ステップの細かさ</label>
-      <select id="fine">
-        <option value="1" selected>呼び出し・移動・完了をすべて</option>
-        <option value="0">円盤の移動だけ</option>
-      </select>
-    </div>
     <div class="spacer"></div>
     <div class="field">
       <label>再生速度</label>
       <input type="range" id="speed" min="1" max="60" value="28" style="width:130px;accent-color:var(--accent)">
     </div>
+    <div class="playbar">
+      <button id="toStart" title="最初へ">⏮</button>
+      <button id="prev" title="1手戻る">◀ 戻る</button>
+      <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+      <button id="next" title="1手進む">次へ ▶</button>
+      <button id="toEnd" title="最後へ">⏭</button>
+      <input type="range" id="progress" min="0" max="0" value="0">
+      <span class="step-label" id="stepLabel">0 / 0</span>
+    </div>
   </div>
+
+  <div class="hint"><kbd>←</kbd> <kbd>→</kbd> 1ステップ　<kbd>Space</kbd> 再生/停止</div>
 
   <div class="layout">
     <div>
@@ -196,16 +193,6 @@
           <span id="descText"></span>
         </div>
       </div>
-      <div class="playbar">
-        <button id="toStart" title="最初へ">⏮</button>
-        <button id="prev" title="1手戻る">◀ 戻る</button>
-        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
-        <button id="next" title="1手進む">次へ ▶</button>
-        <button id="toEnd" title="最後へ">⏭</button>
-        <input type="range" id="progress" min="0" max="0" value="0">
-        <span class="step-label" id="stepLabel">0 / 0</span>
-      </div>
-      <div class="hint"><kbd>←</kbd> <kbd>→</kbd> 1ステップ　<kbd>Space</kbd> 再生/停止</div>
     </div>
 
     <div class="side">
@@ -255,12 +242,6 @@
   </div>
   </div><!-- /modeViz -->
 
-  <!-- ===== ③ クイズ ===== -->
-  <div id="modeQuiz" style="display:none">
-    <div id="score">正解 0 / 0</div>
-    <div id="quizList"></div>
-    <div class="note">迷ったら ① で n を変えて実際に動かす、② のコールスタックを見直してみましょう。</div>
-  </div>
 </div>
 
 <script>
@@ -269,7 +250,7 @@ const PEG = ['A','B','C'];
 const DISK_COL = ['#ff8a65','#ffd24a','#4ade80','#38bdf8','#2f7fd9','#a78bfa','#f472b6'];
 const ROLE_COL = {f:'#ff8a65', t:'#4ade80', v:'#9aa6bb'};
 
-let N=3, FINE=true, frames=[], nodes=[], cur=0, timer=null;
+let N=4, FINE=false, frames=[], nodes=[], cur=0, timer=null;
 
 /* ===== フレーム録画：再帰をそのまま走らせて全ステップを記録 ===== */
 function build(){
@@ -432,14 +413,13 @@ function play(){
 }
 function rebuild(){
   stop();
-  N=+$('nsel').value; FINE=$('fine').value==='1';
+  N=+$('nsel').value;
   build(); buildTable(); resetPlay();
   $('progress').max=frames.length-1;
   goTo(0);
 }
 
 $('nsel').onchange=rebuild;
-$('fine').onchange=rebuild;
 $('toStart').onclick=()=>{stop();goTo(0);};
 $('prev').onclick=()=>{stop();goTo(cur-1);};
 $('next').onclick=()=>{stop();goTo(cur+1);};
@@ -543,48 +523,16 @@ $('pUndo').onclick=()=>{
 $('pHint').onclick=hintPlay;
 $('pToViz').onclick=()=>goTab('viz');
 
-/* ===== ③ クイズ ===== */
-const QUIZ=[
-  {q:'円盤 3 枚の最短手数は？', o:['5手','7手','8手','9手'], a:1,
-   e:'T(3)=2·T(2)+1=2×3+1=7。2^3−1 でもあります。'},
-  {q:'円盤 4 枚を A→C へ運ぶとき、最大の円盤 4 を動かす直前、上の 3 枚はどこにある？', o:['A（出発の柱）','B（経由の柱）','C（到着の柱）','バラバラ'], a:1,
-   e:'4 を C へ置くには、C も 4 の上も空いている必要があるので、3 枚はすべて「経由」の B に積まれています。これが再帰の①。'},
-  {q:'1 枚増やすと、最短手数はどうなる？', o:['+1 手','2 倍','2 倍 + 1 手','2 乗'], a:2,
-   e:'T(n)=2·T(n−1)+1。(n−1)枚を退避、最大を1手、(n−1)枚を戻す。コールスタックでも、同じ形の呼び出し（n−1 枚）が前後に2回現れます。'},
-  {q:'T(4) は？（T(3)=7）', o:['13','15','16','31'], a:1, e:'2×7+1=15。'},
-  {q:'円盤 10 枚の最短手数は？', o:['100','512','1023','1024'], a:2, e:'2^10−1=1023。1秒1手でも約17分。'},
-  {q:'n=4（全 15 手）のうち、一番小さい円盤 1 は何回動く？', o:['1個','4個','8個','15個'], a:2,
-   e:'円盤1 は 1 手おきに動くので、15 手のうち 8 回です。'},
-];
-let qCorrect=0, qAnswered=0;
-function buildQuiz(){
-  qCorrect=qAnswered=0; $('score').textContent='正解 0 / '+QUIZ.length;
-  $('quizList').innerHTML=QUIZ.map((x,i)=>`<div class="q" id="q${i}"><h3>Q${i+1}. ${x.q}</h3>
-    <div class="opts">${x.o.map((t,j)=>`<button data-q="${i}" data-o="${j}">${t}</button>`).join('')}</div>
-    <div class="exp" id="e${i}"></div></div>`).join('');
-  document.querySelectorAll('#quizList button').forEach(b=>b.onclick=()=>{
-    const i=+b.dataset.q, j=+b.dataset.o, x=QUIZ[i], box=$('q'+i);
-    if(box.dataset.done) return; box.dataset.done=1;
-    const bs=box.querySelectorAll('button');
-    bs[x.a].classList.add('right'); if(j!==x.a) b.classList.add('wrong');
-    $('e'+i).style.display='block'; $('e'+i).textContent=(j===x.a?'⭕ 正解。':'❌ 惜しい。')+x.e;
-    qAnswered++; if(j===x.a) qCorrect++;
-    $('score').textContent=`正解 ${qCorrect} / ${QUIZ.length}`+(qAnswered===QUIZ.length?'　おつかれさま！':'');
-  });
-}
-
 /* ===== タブ ===== */
 function goTab(name){
   stop(); curTab=name;
   $('modePlay').style.display=name==='play'?'':'none';
   $('modeViz').style.display=name==='viz'?'':'none';
-  $('modeQuiz').style.display=name==='quiz'?'':'none';
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   if(name==='viz') goTo(cur);
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>goTab(b.dataset.tab));
 
-buildQuiz();
 rebuild();
 </script>
 </body>
