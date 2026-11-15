@@ -65,7 +65,7 @@
     margin:2px; border-radius:6px; font-size:var(--tkf,22px); border:2px solid transparent; transition:all .15s; }
   .tk.alive { background:#fff; border-color:var(--line); }
   .tk.alive.a { border-color:#9cc3f0; } .tk.alive.b { border-color:#d9b8f7; }
-  .tk.gone { border:2px solid var(--current); background:#ffe9e9; opacity:.6; }
+  .tk.gone { border:2px dashed #c3c9d4; background:#eceff4; opacity:.45; filter:grayscale(1); }
   .tk.empty { border:2px dashed var(--line); }
   .tk.empty::after { content:""; }
   .tk.fin { border-color:var(--path); background:#e6fbee; }
@@ -112,8 +112,8 @@
     <button class="primary" id="btnSet">この値で開始</button>
     <div class="field"><label>表示</label>
       <div class="tabs" id="tabs">
-        <button data-v="bar" class="on">横棒グラフ</button>
-        <button data-v="tok">トークン</button>
+        <button data-v="tok" class="on">小石</button>
+        <button data-v="bar">横棒グラフ</button>
         <button data-v="rect">長方形</button>
       </div>
     </div>
@@ -188,7 +188,7 @@ const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 const COL = { A:'#2f7fd9', B:'#c084fc', red:'#ff6b6b', green:'#4ade80', line:'#d6dce8', text:'#1a2030', muted:'#5d6b82' };
 
-let frames = [], cur = 0, timer = null, view = 'bar', A0 = 48, B0 = 18;
+let frames = [], cur = 0, timer = null, view = 'tok', A0 = 48, B0 = 18;
 
 /* ---- フレーム録画：1回の引き算ごとにスナップショット ---- */
 function build(A, B){
@@ -401,7 +401,7 @@ function drawTokens(f, last){
   const subIdx = f.t === 'subA' ? 0 : (f.t === 'subB' ? 1 : -1);
   const mk = (idx, init, val, emoji, cls, name) => {
     let h = `<div class="trow"><div class="tl ${cls}">${name} = ${val}`;
-    if (idx === subIdx) h += ` <span style="color:var(--current);font-weight:400">（${f.amt} 個 取り除いた）</span>`;
+    if (idx === subIdx) h += ` <span style="color:var(--muted);font-weight:400">（${f.amt} 個 取り除いた）</span>`;
     h += `</div><div>`;
     for (let k = 0; k < init; k++){
       let c, s = '';
@@ -412,8 +412,8 @@ function drawTokens(f, last){
     }
     return h + `</div></div>`;
   };
-  box.innerHTML = mk(0, A0, f.a, '🍎', 'a', 'A') + mk(1, B0, f.b, '🍊', 'b', 'B') +
-    `<div class="note">赤枠は今回取り除いたトークン。個数は「小さい方の個数」ぶん。</div>`;
+  box.innerHTML = mk(0, A0, f.a, '🪨', 'a', 'A') + mk(1, B0, f.b, '🪨', 'b', 'B') +
+    `<div class="note">灰色は今回取り除いた小石。個数は「小さい方の個数」ぶん。</div>`;
 }
 
 /* ---- 制御 ---- */
