@@ -42,7 +42,6 @@
   .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
     padding:18px; display:flex; flex-direction:column; align-items:center; gap:10px; }
   canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
-  #tcv { cursor:pointer; }
   .cap { align-self:stretch; font-size:12px; color:var(--muted); margin-top:2px; }
   .desc { margin-top:4px; min-height:44px; font-size:14px; align-self:stretch;
     display:flex; align-items:center; gap:10px; }
@@ -196,8 +195,6 @@
           <span class="badge" id="badge">準備完了</span>
           <span id="descText"></span>
         </div>
-        <canvas id="tcv" width="760" height="260"></canvas>
-        <div class="cap">▲ 再帰の呼び出しツリー。1つの丸＝1回の移動（数字は円盤の番号）。左から右へ読むと<b>手順そのもの</b>になります。丸をクリックでその呼び出しへジャンプ。</div>
       </div>
       <div class="playbar">
         <button id="toStart" title="最初へ">⏮</button>
@@ -247,10 +244,10 @@
       <div class="card">
         <h3>🎨 見方</h3>
         <div class="legend">
-          <span><i style="background:#ff6b6b"></i>いま実行中の呼び出し</span>
-          <span><i style="background:#ffd24a"></i>呼び出し中（スタック上）</span>
-          <span><i style="background:#4ade80"></i>完了</span>
-          <span><i style="background:#d6dce8"></i>まだ呼ばれていない</span>
+          <span><i style="background:#ff8a65"></i>出発の柱</span>
+          <span><i style="background:#4ade80"></i>到着の柱</span>
+          <span><i style="background:#9aa6bb"></i>経由の柱</span>
+          <span><i style="background:#fff;border-color:#ff3b3b"></i>いま動かした円盤</span>
         </div>
         <div class="note">盤面では、いまの呼び出しが扱う「上の k 枚」だけが濃く、それより大きな円盤は薄く表示されます（＝部分問題の範囲）。</div>
       </div>
@@ -262,7 +259,7 @@
   <div id="modeQuiz" style="display:none">
     <div id="score">正解 0 / 0</div>
     <div id="quizList"></div>
-    <div class="note">迷ったら ① で n を変えて実際に動かす、② でツリーを見直してみましょう。</div>
+    <div class="note">迷ったら ① で n を変えて実際に動かす、② のコールスタックを見直してみましょう。</div>
   </div>
 </div>
 
@@ -292,18 +289,16 @@ function build(){
 
   function rec(n,f,t,v,parent){
     const id=nodes.length;
-    const nd={n,f,t,v,parent,id,idx:0,enter:0};
+    const nd={n,f,t,v,parent,id};
     nodes.push(nd);
     status[id]=1; phase[id]=(n>1?0:1); stack.push(id);
     if(FINE){
-      nd.enter=frames.length;
       snap('enter', `${lab(nd)} を呼び出し。`+(n>1
         ?`まず上の ${n-1} 枚を ${PEG[f]}→${PEG[v]} へ（①）。`
         :`1枚だけなので、そのまま動かせる。`), -1);
     }
     if(n>1) rec(n-1,f,v,t,id);
-    phase[id]=1; pegOf[n]=t; moveNo++; nd.idx=moveNo;
-    if(!FINE) nd.enter=frames.length;
+    phase[id]=1; pegOf[n]=t; moveNo++;
     snap('move', `② 円盤 ${n} を ${PEG[f]}→${PEG[t]} へ移動（${moveNo}手目）。`+(n>1
       ?`上の ${n-1} 枚は ${PEG[v]} に退避済み。`:''), n);
     if(n>1){ phase[id]=2; rec(n-1,v,t,f,id); }
@@ -376,59 +371,6 @@ function drawPegsOn(g,cv,fr){
   }
 }
 
-/* ===== 描画：再帰の呼び出しツリー（x = 移動番号 ⇒ 左から右が手順） ===== */
-const tcv=$('tcv'), tg=tcv.getContext('2d');
-let treePos=[]; // {x,y,r}
-function layoutTree(){
-  const W=tcv.width,H=tcv.height, padX=24, padT=28, padB=22;
-  const total=(1<<N)-1;
-  const dy = N>1? Math.min(46,(H-padT-padB)/(N-1)) : 0;
-  const sp=(W-2*padX)/total;
-  const r=Math.max(2.5, Math.min(13, sp*0.46));
-  treePos=nodes.map(nd=>({ x:padX+(nd.idx-0.5)*sp, y:padT+(N-nd.n)*dy, r }));
-}
-function drawTree(fr){
-  const W=tcv.width,H=tcv.height;
-  tg.clearRect(0,0,W,H);
-  // 段ラベル
-  tg.fillStyle='#5d6b82'; tg.font='11px sans-serif'; tg.textAlign='left';
-  const dy = N>1? Math.min(46,(H-28-22)/(N-1)) : 0;
-  for(let n=N;n>=1;n--) tg.fillText(`円盤${n}`, 2, 28+(N-n)*dy-(N>=6?6:10));
-  const top = fr.stack.length? fr.stack[fr.stack.length-1] : -1;
-  const inStack=new Set(fr.stack);
-  // エッジ
-  nodes.forEach(nd=>{
-    if(nd.parent<0) return;
-    const a=treePos[nd.parent], b=treePos[nd.id];
-    tg.strokeStyle = fr.st[nd.id]? '#8795ad' : '#d6dce8';
-    tg.lineWidth=1.2;
-    tg.beginPath(); tg.moveTo(a.x,a.y); tg.lineTo(b.x,b.y); tg.stroke();
-  });
-  // ノード
-  nodes.forEach(nd=>{
-    const p=treePos[nd.id], s=fr.st[nd.id];
-    let col='#d6dce8';
-    if(s===2) col='#4ade80';
-    if(inStack.has(nd.id)) col='#ffd24a';
-    if(nd.id===top) col='#ff6b6b';
-    tg.fillStyle=col; tg.strokeStyle='#0007'; tg.lineWidth=1;
-    tg.beginPath(); tg.arc(p.x,p.y,p.r,0,Math.PI*2); tg.fill(); tg.stroke();
-    if(p.r>=7){
-      tg.fillStyle='#06122a'; tg.font=`bold ${Math.round(p.r*1.05)}px sans-serif`; tg.textAlign='center';
-      tg.fillText(nd.n,p.x,p.y+p.r*0.36);
-    }
-  });
-  // 現在の呼び出しの部分木（範囲）をなぞる帯
-  if(top>=0){
-    const kids=[]; (function walk(i){ kids.push(i); nodes.forEach(c=>{ if(c.parent===i) walk(c.id); }); })(top);
-    let x0=1e9,x1=-1e9; kids.forEach(i=>{ x0=Math.min(x0,treePos[i].x); x1=Math.max(x1,treePos[i].x); });
-    const y=treePos[top].y;
-    tg.strokeStyle='#ff6b6b'; tg.lineWidth=2; tg.setLineDash([5,4]);
-    tg.strokeRect(x0-treePos[top].r-3, y-treePos[top].r-5, (x1-x0)+2*treePos[top].r+6, H-(y-treePos[top].r-5)-8);
-    tg.setLineDash([]);
-  }
-}
-
 /* ===== サイドパネル ===== */
 function renderSide(fr){
   const total=(1<<N)-1;
@@ -464,7 +406,7 @@ function buildTable(){
 /* ===== 制御 ===== */
 function renderFrame(i){
   cur=i; const fr=frames[i];
-  drawPegs(fr); drawTree(fr); renderSide(fr);
+  drawPegs(fr); renderSide(fr);
   const b=$('badge');
   b.className='badge '+fr.kind;
   b.textContent={start:'開始',enter:'呼び出し',move:'移動',exit:'完了',done:'終了'}[fr.kind];
@@ -491,7 +433,7 @@ function play(){
 function rebuild(){
   stop();
   N=+$('nsel').value; FINE=$('fine').value==='1';
-  build(); layoutTree(); buildTable(); resetPlay();
+  build(); buildTable(); resetPlay();
   $('progress').max=frames.length-1;
   goTo(0);
 }
@@ -504,13 +446,6 @@ $('next').onclick=()=>{stop();goTo(cur+1);};
 $('toEnd').onclick=()=>{stop();goTo(frames.length-1);};
 $('play').onclick=play;
 $('progress').oninput=e=>{stop();goTo(+e.target.value);};
-tcv.onclick=e=>{
-  const rc=tcv.getBoundingClientRect(), k=tcv.width/rc.width;
-  const x=(e.clientX-rc.left)*k, y=(e.clientY-rc.top)*k;
-  let best=-1,bd=1e9;
-  treePos.forEach((p,i)=>{ const d=Math.hypot(p.x-x,p.y-y); if(d<bd){bd=d;best=i;} });
-  if(best>=0 && bd<=Math.max(14,treePos[best].r+4)){ stop(); goTo(nodes[best].enter); }
-};
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='SELECT' || curTab!=='viz') return;
   if(e.key==='ArrowRight'){ stop(); goTo(cur+1); e.preventDefault(); }
@@ -615,11 +550,11 @@ const QUIZ=[
   {q:'円盤 4 枚を A→C へ運ぶとき、最大の円盤 4 を動かす直前、上の 3 枚はどこにある？', o:['A（出発の柱）','B（経由の柱）','C（到着の柱）','バラバラ'], a:1,
    e:'4 を C へ置くには、C も 4 の上も空いている必要があるので、3 枚はすべて「経由」の B に積まれています。これが再帰の①。'},
   {q:'1 枚増やすと、最短手数はどうなる？', o:['+1 手','2 倍','2 倍 + 1 手','2 乗'], a:2,
-   e:'T(n)=2·T(n−1)+1。(n−1)枚を退避、最大を1手、(n−1)枚を戻す。ツリーの「根の1つ＋同じ形の部分木2つ」に対応します。'},
+   e:'T(n)=2·T(n−1)+1。(n−1)枚を退避、最大を1手、(n−1)枚を戻す。コールスタックでも、同じ形の呼び出し（n−1 枚）が前後に2回現れます。'},
   {q:'T(4) は？（T(3)=7）', o:['13','15','16','31'], a:1, e:'2×7+1=15。'},
   {q:'円盤 10 枚の最短手数は？', o:['100','512','1023','1024'], a:2, e:'2^10−1=1023。1秒1手でも約17分。'},
-  {q:'呼び出しツリーで「円盤 1（一番小さい円盤）」の丸は、n=4 のとき全部で何個？', o:['1個','4個','8個','15個'], a:2,
-   e:'葉（一番下の段）は全体の半分強。n=4 の全 15 手のうち、円盤1 は 8 回動きます（1手おきに円盤1が動く）。'},
+  {q:'n=4（全 15 手）のうち、一番小さい円盤 1 は何回動く？', o:['1個','4個','8個','15個'], a:2,
+   e:'円盤1 は 1 手おきに動くので、15 手のうち 8 回です。'},
 ];
 let qCorrect=0, qAnswered=0;
 function buildQuiz(){
