@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>チューリングマシン — テープとレジスタで計算する</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --cur:#e04848;      /* 現在地（ヘッド・書き込み） */
+    --ok:#1f9d57;       /* 書き込み済みの値 */
+    --best:#4ade80;
+    --stage:#f7f9fc;    /* 機械を載せる面（canvas 背景と同じ） */
+    --tape:#ffffff;
+    --cell-w:60px; --vp-w:420px; --vp-h:80px; --reel-w:210px;
+    --mono:Consolas,Menlo,Monaco,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 10px; font-size:14px; }
+  .layout { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start; margin-top:18px; }
+  @media (max-width:980px){ .layout { grid-template-columns:1fr; } }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.6; margin:10px 0 0; }
+  .note b { color:var(--text); }
+  kbd, code { background:var(--panel2); border:1px solid var(--line); border-radius:5px;
+              padding:1px 6px; font-size:12px; font-family:var(--mono); }
+
+  button { font-family:inherit; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer; white-space:nowrap;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled) { background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.primary:hover:not(:disabled) { background:#1f6bc4; }
+  button.danger { color:var(--cur); }
+  button.danger:hover:not(:disabled) { background:#fdecec; border-color:var(--cur); }
+  button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  /* ===== 機械（テープ・リール） ===== */
+  .stage-scroll { overflow-x:auto; background:var(--stage); border-radius:8px; padding:16px 0 8px; }
+  .machine { display:flex; flex-direction:column; align-items:center; user-select:none;
+             width:calc(var(--reel-w)*2 + var(--vp-w)); margin:0 auto; }
+  .reels-row, .head-row { display:flex; width:100%; }
+  .reel-col { width:var(--reel-w); flex-shrink:0; display:flex; flex-direction:column; align-items:center; }
+  .reel-spacer { width:var(--vp-w); flex-shrink:0; }
+  .vtape { width:44px; height:24px; background:var(--tape);
+           border-left:1px solid var(--line); border-right:1px solid var(--line); }
+  .htape-row { width:100%; height:var(--vp-h); background:var(--tape); position:relative; flex-shrink:0;
+               border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .tape-viewport { position:absolute; left:var(--reel-w); top:0; width:var(--vp-w); height:var(--vp-h);
+                   overflow:hidden; background:var(--tape); }
+  .tape-inner { display:flex; position:absolute; top:0; left:0; height:100%; will-change:transform; }
+  svg .cover { fill:var(--stage); }
+  svg .strip { fill:var(--tape); }
+  svg .edge  { stroke:var(--line); stroke-width:1; }
+
+  .cell { width:var(--cell-w); height:100%; display:flex; flex-direction:column; align-items:center;
+          justify-content:center; border-right:1px solid var(--line); flex-shrink:0; cursor:text; }
+  .cell-val { font:700 1.4rem var(--mono); color:#b0b8cc; }
+  .cell-idx { font:.75rem var(--mono); color:#a3adc2; margin-top:4px; }
+  .cell:hover { background:rgba(47,127,217,.04); }
+  .cell.is-head { background:rgba(47,127,217,.08); }
+  .cell.is-head .cell-val { color:var(--accent); }
+  .cell.is-head .cell-idx { color:var(--cur); font-weight:700; }
+  .cell.has-value .cell-val { color:var(--ok); }
+  .cell-edit-input { width:52px; font:700 1.3rem var(--mono); text-align:center; border:none;
+                     background:transparent; color:var(--cur); outline:2px solid var(--cur);
+                     border-radius:3px; padding:0; -moz-appearance:textfield; }
+  .cell-edit-input::-webkit-inner-spin-button,
+  .cell-edit-input::-webkit-outer-spin-button { -webkit-appearance:none; }
+
+  /* READ（青）/ WRITE（赤）のフラッシュ */
+  @keyframes cell-scan {
+    0%,100% { background:rgba(47,127,217,.08); box-shadow:none; }
+    30% { background:rgba(47,127,217,.35);
+          box-shadow:inset 0 0 0 2px rgba(47,127,217,.9), 0 0 22px rgba(47,127,217,.45); } }
+  @keyframes cell-val-scan {
+    0%,100% { transform:scale(1); }
+    30% { transform:scale(1.38); text-shadow:0 0 14px rgba(47,127,217,.9); } }
+  @keyframes cell-stamp {
+    0% { background:rgba(224,72,72,.05); box-shadow:none; }
+    22% { background:rgba(224,72,72,.40);
+          box-shadow:inset 0 0 0 2px rgba(224,72,72,1), 0 0 26px rgba(224,72,72,.5); }
+    100% { background:rgba(47,127,217,.08); box-shadow:none; } }
+  @keyframes cell-val-stamp {
+    0% { transform:scale(2) translateY(-4px); opacity:0; }
+    32% { transform:scale(.92); opacity:1; color:var(--cur); text-shadow:0 0 14px rgba(224,72,72,.9); }
+    55% { transform:scale(1.08); }
+    100% { transform:scale(1); color:var(--ok); text-shadow:none; } }
+  .cell.is-head.cell-reading { animation:cell-scan .5s ease-out forwards; }
+  .cell.is-head.cell-reading .cell-val { animation:cell-val-scan .5s ease-out forwards; }
+  .cell.is-head.cell-writing { animation:cell-stamp .52s ease-out forwards; }
+  .cell.is-head.cell-writing .cell-val { animation:cell-val-stamp .52s cubic-bezier(.2,0,.3,1) forwards; }
+
+  .head-spacer { width:var(--reel-w); flex-shrink:0; }
+  .head-center { width:var(--vp-w); display:flex; justify-content:center; }
+  .head-pointer { display:flex; flex-direction:column; align-items:center; margin-top:4px; line-height:1; color:var(--cur); }
+  .head-pointer .arrow { font-size:1.6rem; }
+  .head-pointer .label { font:700 1.1rem var(--mono); }
+
+  /* ===== レジスタと命令 ===== */
+  .reg-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; }
+  .reg-display { background:#1a2030; color:var(--best); font:700 3.4rem var(--mono);
+                 font-variant-numeric:tabular-nums; min-width:200px; text-align:center;
+                 padding:14px 24px 12px; border-radius:10px; border:2px solid #2f3b57;
+                 box-shadow:inset 0 2px 8px rgba(0,0,0,.5); text-shadow:0 0 12px rgba(74,222,128,.5); }
+  @keyframes reg-flash {
+    0%,100% { background:#1a2030; text-shadow:0 0 12px rgba(74,222,128,.5); }
+    18% { background:#1f4a35; color:#c9ffe0; text-shadow:0 0 24px rgba(74,222,128,.95); } }
+  .reg-display.flash { animation:reg-flash .4s ease-out forwards; }
+  .op-panel { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+  .op-row { display:flex; gap:8px; flex-wrap:wrap; }
+  .op-row button { font-family:var(--mono); font-weight:600; min-width:64px; }
+
+  /* ===== プログラムエディタ ===== */
+  .prog-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .prog-bar .spacer { flex:1; }
+  .snippet-input { font:13px var(--mono); padding:8px 10px; width:110px; border:1px solid var(--line);
+                   border-radius:8px; background:var(--panel2); color:var(--text); outline:none; }
+  .snippet-input:focus { border-color:var(--accent); }
+  .snippet-input.bad { border-color:var(--cur); }
+  .prog-editor { display:flex; height:360px; border:1px solid var(--line); border-radius:8px;
+                 overflow:hidden; font:13.5px/22px var(--mono); }
+  .line-nums { width:42px; padding:8px 0; background:var(--panel2); border-right:1px solid var(--line);
+               overflow:hidden; flex-shrink:0; text-align:right; user-select:none; }
+  .ln { height:22px; padding-right:8px; font-size:12px; color:var(--muted); line-height:22px; }
+  .ln.active { background:var(--accent); color:#fff; border-radius:0 3px 3px 0; }
+  .prog-input { flex:1; padding:8px 10px; border:none; outline:none; resize:none; font:inherit;
+                line-height:22px; background:var(--tape); color:var(--text); overflow:auto;
+                tab-size:2; white-space:pre; }
+  .status { min-height:22px; margin-top:8px; font-size:13px; color:var(--muted); }
+  .status.err { color:var(--cur); font-weight:600; }
+
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { padding:6px 8px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  td:first-child { white-space:nowrap; font-family:var(--mono); font-weight:600; color:var(--accent); }
+  footer { text-align:center; font-size:12px; color:var(--muted); padding:0 0 30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧮 チューリングマシン（レジスタ付き）</h1>
+  <span class="sub">テープ・ヘッド・レジスタだけで、足し算から階乗まで計算できる — 命令を1つずつ動かして確かめよう</span>
+</header>
+
+<div class="wrap">
+
+  <div class="card">
+    <h3>① テープとヘッド（セルをダブルクリックで値を直接編集）</h3>
+    <div class="stage-scroll">
+      <div class="machine">
+        <div class="reels-row">
+          <div class="reel-col"><div data-reel="L"></div><div class="vtape"></div></div>
+          <div class="reel-spacer"></div>
+          <div class="reel-col"><div data-reel="R"></div><div class="vtape"></div></div>
+        </div>
+        <div class="htape-row">
+          <div class="tape-viewport"><div class="tape-inner" id="tapeInner"></div></div>
+        </div>
+        <div class="head-row">
+          <div class="head-spacer"></div>
+          <div class="head-center">
+            <div class="head-pointer"><div class="arrow">▲</div><div class="label" id="posDisplay">M[0]</div></div>
+          </div>
+          <div class="head-spacer"></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">セルの下の数字は<b>ベースポインタ bp からの相対番号</b> M[n]。<code>CALL</code> するとヘッド位置が新しい M[0] になり、<code>RET</code> で元に戻る（関数ごとの作業領域）。値が書かれたセルは緑で表示。</p>
+  </div>
+
+  <div class="layout">
+    <div class="card">
+      <h3>② レジスタと手動操作</h3>
+      <div class="reg-title">Register</div>
+      <div class="reg-display" id="regDisplay">0</div>
+      <div class="op-panel">
+        <div class="op-row">
+          <button data-op="left"  title="1マス左へ">◀ LEFT</button>
+          <button data-op="move"  title="レジスタの値の位置 M[register] へ移動">MOVE</button>
+          <button data-op="right" title="1マス右へ">RIGHT ▶</button>
+        </div>
+        <div class="op-row">
+          <button data-op="read"  title="ヘッドの値をレジスタへ">READ</button>
+          <button data-op="write" title="レジスタの値をヘッドのセルへ">WRITE</button>
+          <button data-op="reset" class="danger" title="テープとレジスタを初期化">RESET</button>
+        </div>
+        <div class="op-row">
+          <button data-op="inc">INC</button>
+          <button data-op="dec">DEC</button>
+          <button data-op="neg">NEG</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>③ プログラム</h3>
+      <div class="prog-bar">
+        <button id="runBtn" class="primary">▶ 実行</button>
+        <button id="stepBtn">⊳ ステップ</button>
+        <button id="stopBtn" disabled>■ 停止</button>
+        <button id="fastBtn" title="高速モード（効果音・アニメーションなし）">⚡ 高速</button>
+        <span class="spacer"></span>
+        <button id="snippetBtn" title="サンプルプログラムを挿入">📋 サンプル</button>
+        <span id="snippetBox" hidden>
+          <input type="text" id="snippetInput" class="snippet-input" placeholder="add / fact …" list="snippetNames">
+          <datalist id="snippetNames"></datalist>
+        </span>
+      </div>
+      <div class="prog-editor">
+        <div class="line-nums" id="lineNums"></div>
+        <textarea class="prog-input" id="progInput" spellcheck="false"></textarea>
+      </div>
+      <div class="status" id="status">サンプル名（<code>add</code> <code>sub</code> <code>mul</code> <code>div</code> <code>mod</code> <code>gcd</code> <code>fact</code> <code>fib</code> <code>double</code>）を選んで挿入するか、自分で書いてみよう。</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3>命令一覧</h3>
+    <table>
+      <tr><th>命令</th><th>動作</th></tr>
+      <tr><td>SET n</td><td>レジスタに n を入れる</td></tr>
+      <tr><td>LEFT / RIGHT</td><td>ヘッドを1マス左／右へ</td></tr>
+      <tr><td>MOVE [n]</td><td>ヘッドを M[n] へ移動。n を省略するとレジスタの値の位置へ</td></tr>
+      <tr><td>READ / WRITE</td><td>ヘッドのセル → レジスタ ／ レジスタ → ヘッドのセル</td></tr>
+      <tr><td>INC [n] / DEC [n] / NEG</td><td>レジスタを +n／−n（既定 1）／符号反転</td></tr>
+      <tr><td>JUMP ラベル</td><td>無条件ジャンプ（行番号も可）</td></tr>
+      <tr><td>IFZERO / IFNEG ラベル</td><td>レジスタが 0／負なら、そのラベルへジャンプ</td></tr>
+      <tr><td>CALL ラベル / RET</td><td>サブルーチン呼び出し（ヘッド位置が新しい M[0]）／呼び出し元へ復帰</td></tr>
+    </table>
+    <p class="note">足し算は「INC を B 回くり返す」、掛け算は「足し算を B 回くり返す」…と、<b>ごく小さな命令の組み合わせから複雑な計算が作れる</b>。1 回の実行は最大 20000 ステップまで。</p>
+  </div>
+</div>
+
+<footer>© 2026 Kimio Kuramitsu</footer>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── 設定 ────────────────────────────────────────────────────────────────────
+const CELL_W   = 60;                          // 1セルの幅(px)
+const VISIBLE  = 7;                           // 窓に見えるセル数（奇数）
+const BUFFER   = 60;                          // 窓の外に描いておくセル数（片側）
+const VP_W     = CELL_W * VISIBLE;
+const HALF_VIS = Math.floor(VISIBLE / 2);
+const TOTAL    = BUFFER + VISIBLE + BUFFER;
+const HEAD_LOCAL = BUFFER + HALF_VIS;         // 描画配列の中でヘッドが居る位置
+const BASE_X   = VP_W / 2 - (HEAD_LOCAL * CELL_W + CELL_W / 2);
+const MAX_STEPS = 20000;
+
+// ── リール SVG（左右で同一形状。id だけ違う） ───────────────────────────────
+function reelSVG(side) {
+  const spokes = [
+    [175,136,175,72,7,'#9a5828'],[175,204,175,268,7,'#9a5828'],[141,170,77,170,7,'#9a5828'],[209,170,273,170,7,'#9a5828'],
+    [199,146,244,101,4.5,'#b87038'],[199,194,244,239,4.5,'#b87038'],[151,146,106,101,4.5,'#b87038'],[151,194,106,239,4.5,'#b87038'],
+  ].map(([a,b,c,d,w,col]) =>
+    `<line x1="${a}" y1="${b}" x2="${c}" y2="${d}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>`).join('');
+  return `<svg width="210" height="204" viewBox="0 0 350 340">
+    <circle cx="178" cy="173" r="155" fill="#1a0800" opacity=".28"/>
+    <circle cx="175" cy="170" r="155" fill="#4a2206" stroke="#2a1002" stroke-width="2.5"/>
+    <circle cx="175" cy="170" r="148" fill="none" stroke="#6a3410" stroke-width="2" opacity=".55"/>
+    <circle cx="175" cy="170" r="112" fill="none" stroke="#3a1604" stroke-width="20"/>
+    <circle cx="175" cy="170" r="89"  fill="none" stroke="#2a1002" stroke-width="10"/>
+    <g id="spokes-${side}" style="transform-box:fill-box;transform-origin:center">${spokes}</g>
+    <circle cx="175" cy="170" r="34" fill="#3a1604" stroke="#2a1002" stroke-width="2"/>
+    <circle cx="175" cy="170" r="16" fill="#6a3010"/>
+    <circle cx="175" cy="170" r="8"  fill="#c86010" opacity=".9"/>
+    <rect class="cover" x="0" y="316" width="350" height="24"/>
+    <rect class="strip" x="153" y="310" width="44" height="30"/>
+    <line class="edge" x1="153" y1="304" x2="153" y2="340"/>
+    <line class="edge" x1="197" y1="304" x2="197" y2="340"/>
+  </svg>`;
+}
+document.querySelectorAll('[data-reel]').forEach(el => { el.innerHTML = reelSVG(el.dataset.reel); });
+
+// ── 効果音（Web Audio） ─────────────────────────────────────────────────────
+const Sound = {
+  muted: false, ac: null,
+  init() {
+    if (this.ac) return;
+    try { this.ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {}
+  },
+  ctx() {
+    if (this.muted) return null;
+    this.init();
+    if (!this.ac) return null;
+    if (this.ac.state === 'suspended') this.ac.resume();
+    return this.ac;
+  },
+  /** 減衰するノイズ（クリック音・打刻音） */
+  noise(ac, t, dur, power, gain, lowpass) {
+    const len = Math.floor(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, power) * gain;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    let node = src;
+    if (lowpass) { const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lowpass; node.connect(lp); node = lp; }
+    node.connect(ac.destination);
+    src.start(t);
+  },
+  /** 音程が f0→f1 へ滑る単音 */
+  tone(ac, type, t, f0, f1, attack, dur, peak) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur * .6);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(.001, t + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + dur + .03);
+  },
+  register() {                      // レジスタ更新：チン
+    const ac = this.ctx(); if (!ac) return; const t = ac.currentTime;
+    this.noise(ac, t, .022, 2, .3);
+    this.tone(ac, 'triangle', t + .018, 1760, 1320, .01, .2, .35);
+    this.tone(ac, 'sine',     t + .025,  880,  660, .015, .25, .2);
+  },
+  write() {                         // WRITE：ドスッ
+    const ac = this.ctx(); if (!ac) return; const t = ac.currentTime;
+    this.noise(ac, t, .05, 1.4, .7, 280);
+    this.tone(ac, 'square', t + .018, 520, 260, .012, .14, .12);
+  },
+  jump(taken) {
+    const ac = this.ctx(); if (!ac) return; const t = ac.currentTime;
+    if (taken) {
+      this.tone(ac, 'sawtooth', t, 220, 880, .001, .18, .18);
+      this.noise(ac, t + .14, .018, 2, .4);
+    } else {
+      this.noise(ac, t, .015, 2, .25);
+    }
+  },
+  arpeggio(freqs) {                 // CALL（上昇）/ RET（下降）
+    const ac = this.ctx(); if (!ac) return; const t = ac.currentTime;
+    freqs.forEach((f, i) => this.tone(ac, 'triangle', t + i * .07, f, f, .016, .13, .22));
+  },
+};
+
+// ── TuringMachine ───────────────────────────────────────────────────────────
+class TuringMachine {
+  constructor() {
+    this.fast = false;
+    this._busy = false;
+    this._el = { inner: $('tapeInner'), reg: $('regDisplay'), pos: $('posDisplay'),
+                 spkL: $('spokes-L'), spkR: $('spokes-R') };
+    this.reset();
+  }
+
+  reset() {
+    this.tape = {};          // 疎な配列: 絶対位置 → 値
+    this.register = 0;
+    this.headPos = 0;        // ヘッドの絶対位置
+    this.bp = 0;             // ベースポインタ（M[0] の絶対位置）
+    this.callStack = [];     // { bp, returnPC }
+    this.rot = 0;            // リールの回転角
+    this._el.spkL.style.transform = this._el.spkR.style.transform = '';
+    this._render();
+    this._showReg();
+  }
+
+  // ── 表示 ────────────────────────────────────────────────────────────────
+  _showReg(flash = false) {
+    const el = this._el.reg;
+    el.textContent = this.register;
+    if (!flash) return;
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    Sound.register();
+  }
+  _showPos() {
+    const d = this.callStack.length;
+    this._el.pos.textContent = `M[${this.headPos - this.bp}]` + (d ? ` (depth:${d})` : '');
+  }
+  _flashCell(cls) {
+    const cell = this._el.inner.querySelector('.is-head');
+    if (!cell) return;
+    cell.classList.remove('cell-reading', 'cell-writing');
+    void cell.offsetWidth;
+    cell.classList.add(cls);
+    setTimeout(() => cell.classList.remove(cls), 600);
+  }
+
+  /** テープ全体を描き直す（ヘッドが窓の中央に来る） */
+  _render() {
+    const start = this.headPos - HEAD_LOCAL;
+    const inner = this._el.inner;
+    inner.textContent = '';
+    for (let i = 0; i < TOTAL; i++) {
+      const idx = start + i, val = this.tape[idx];
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (idx === this.headPos ? ' is-head' : '') + (val !== undefined ? ' has-value' : '');
+      cell.dataset.idx = idx;
+      cell.innerHTML = `<div class="cell-val">${val ?? 0}</div><div class="cell-idx">${idx - this.bp}</div>`;
+      cell.addEventListener('dblclick', e => { e.stopPropagation(); this._editCell(cell, idx); });
+      inner.appendChild(cell);
+    }
+    inner.style.transition = 'none';
+    inner.style.transform = `translateX(${BASE_X}px)`;
+    this._showPos();
+  }
+
+  _slideTape(delta, ms) {
+    const inner = this._el.inner;
+    inner.style.transition = `transform ${ms}ms cubic-bezier(.35,0,.25,1)`;
+    inner.style.transform = `translateX(${BASE_X - delta * CELL_W}px)`;
+  }
+
+  _spinReels(delta, ms) {
+    const from = this.rot, to = from + delta * 30;   // 1セル = 30°
+    const t0 = performance.now();
+    const tick = now => {
+      const p = Math.min(1, (now - t0) / ms);
+      const e = p < .5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
+      const deg = `rotate(${from + (to - from) * e}deg)`;
+      this._el.spkL.style.transform = this._el.spkR.style.transform = deg;
+      if (p < 1) requestAnimationFrame(tick); else this.rot = to;
+    };
+    requestAnimationFrame(tick);
+  }
+
+  _updateCell(idx) {
+    const cell = this._el.inner.querySelector(`[data-idx="${idx}"]`);
+    if (!cell) return;
+    const val = this.tape[idx];
+    cell.querySelector('.cell-val').textContent = val ?? 0;
+    cell.classList.toggle('has-value', val !== undefined);
+  }
+
+  /** ダブルクリックでセルの値を直接編集 */
+  _editCell(cell, idx) {
+    const vDiv = cell.querySelector('.cell-val');
+    if (!vDiv) return;                       // すでに編集中
+    const input = document.createElement('input');
+    input.className = 'cell-edit-input';
+    input.type = 'number';
+    input.value = this.tape[idx] ?? 0;
+    vDiv.replaceWith(input);
+    input.select();
+    let cancelled = false;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { cancelled = true; input.blur(); }
+    });
+    input.addEventListener('blur', () => {
+      const raw = input.value.trim(), v = raw === '' ? 0 : Number(raw);
+      if (!cancelled && !isNaN(v)) this.tape[idx] = v;
+      this._render();
+    });
+    input.focus();
+  }
+
+  // ── 命令 ────────────────────────────────────────────────────────────────
+  set(v)  { this.register = Number(v); this._showReg(true); }
+  inc(n = 1) { this.register += n; this._showReg(true); }
+  dec(n = 1) { this.register -= n; this._showReg(true); }
+  neg()   { this.register = -this.register; this._showReg(true); }
+
+  read() {
+    this.register = this.tape[this.headPos] ?? 0;
+    this._flashCell('cell-reading');
+    this._showReg(true);
+  }
+  write() {
+    this.tape[this.headPos] = this.register;
+    this._updateCell(this.headPos);
+    this._flashCell('cell-writing');
+    Sound.write();
+  }
+
+  /** ヘッドを M[n]（n 省略時はレジスタの値）へ移動 */
+  async move(n = this.register) {
+    n = Math.round(Number(n));
+    if (this._busy) return;
+    const target = this.bp + n, delta = target - this.headPos;
+    if (delta === 0) return;
+    this._busy = true;
+    if (!this.fast) {
+      const abs = Math.abs(delta);
+      if (abs > BUFFER - HALF_VIS) {        // 遠いジャンプ: リールだけ回して即描き直し
+        this._spinReels(delta, 320);
+        await sleep(350);
+      } else {
+        const ms = Math.min(700, Math.max(220, abs * 45));
+        this._slideTape(delta, ms);
+        this._spinReels(delta, ms);
+        await sleep(ms + 30);
+      }
+    }
+    this.headPos = target;
+    this._render();
+    this._busy = false;
+  }
+  left()  { return this.move(this.headPos - 1 - this.bp); }
+  right() { return this.move(this.headPos + 1 - this.bp); }
+
+  /** CALL: ヘッド位置を新しい M[0] にする（M[-1] に旧 bp を保存） */
+  call(returnPC) {
+    this.callStack.push({ bp: this.bp, returnPC });
+    this.tape[this.headPos - 1] = this.bp;
+    this.bp = this.headPos;
+    this._render();
+    Sound.arpeggio([330, 440, 660]);
+  }
+  /** RET: 呼び出し元のフレームに戻り、復帰先の行を返す（スタックが空なら null） */
+  ret() {
+    const f = this.callStack.pop();
+    if (!f) return null;
+    this.bp = this.headPos = f.bp;
+    this._render();
+    Sound.arpeggio([660, 440, 330]);
+    return f.returnPC;
+  }
+}
+
+const tm = new TuringMachine();
+
+// 手動ボタン
+document.querySelectorAll('[data-op]').forEach(b =>
+  b.addEventListener('click', () => { Sound.init(); tm[b.dataset.op](); }));
+
+// ── サンプルプログラム ──────────────────────────────────────────────────────
+const SNIPPETS = {
+  sub: `# M[0]=A, M[1]=B → register = A - B
+SUBTRACT:
+LOOP:
+  MOVE 1
+  READ
+  IFZERO DONE
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  DEC
+  WRITE
+  JUMP LOOP
+DONE:
+  MOVE 0
+  READ
+  RET`,
+
+  double: `# M[0]=A → register = A * 2
+DOUBLE:
+  MOVE 0
+  READ
+  MOVE 1
+  WRITE
+DBLLOOP:
+  MOVE 1
+  READ
+  IFZERO DBLEND
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  INC
+  WRITE
+  JUMP DBLLOOP
+DBLEND:
+  MOVE 0
+  READ
+  RET`,
+
+  add: `# M[0]=A, M[1]=B → register = A + B
+ADD:
+  MOVE 1
+  READ
+  MOVE 2
+  WRITE
+ADDLOOP:
+  MOVE 2
+  READ
+  IFZERO ADDEND
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  INC
+  WRITE
+  JUMP ADDLOOP
+ADDEND:
+  MOVE 0
+  READ
+  RET`,
+
+  gcd: `# GCD(A, B) — 差し引き法（A−B の差が0になるまで繰り返す）
+# M[0]=A, M[1]=B → register = gcd(A, B)
+# IFNEG で A−B の符号を判定、NEG で B−A を得る
+GCD:
+GCDLOOP:
+  MOVE 0
+  READ
+  MOVE 2
+  WRITE
+  MOVE 1
+  READ
+  MOVE 3
+  WRITE
+SUBLOOP:
+  MOVE 3
+  READ
+  IFZERO SUBEND
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  DEC
+  WRITE
+  JUMP SUBLOOP
+SUBEND:
+  MOVE 0
+  READ
+  IFZERO GDONE
+  IFNEG BGTOA
+  JUMP GCDLOOP
+BGTOA:
+  NEG
+  MOVE 1
+  WRITE
+  MOVE 2
+  READ
+  MOVE 0
+  WRITE
+  JUMP GCDLOOP
+GDONE:
+  MOVE 2
+  READ
+  RET`,
+
+  mod: `# M[0]=A, M[1]=B → register = A mod B
+MODULO:
+  MOVE 0
+  READ
+  MOVE 2
+  WRITE
+MODLOOP:
+  MOVE 1
+  READ
+  MOVE 3
+  WRITE
+MODSUB:
+  MOVE 3
+  READ
+  IFZERO MODCHECK
+  DEC
+  WRITE
+  MOVE 2
+  READ
+  DEC
+  WRITE
+  JUMP MODSUB
+MODCHECK:
+  MOVE 2
+  READ
+  IFNEG MODADD
+  JUMP MODLOOP
+MODADD:
+  MOVE 1
+  READ
+  MOVE 3
+  WRITE
+MODFIX:
+  MOVE 3
+  READ
+  IFZERO MODEND
+  DEC
+  WRITE
+  MOVE 2
+  READ
+  INC
+  WRITE
+  JUMP MODFIX
+MODEND:
+  MOVE 2
+  READ
+  RET`,
+
+  div: `# M[0]=A, M[1]=B → register = A / B (整数除算)
+# メモリレイアウト:
+#   M[2]=商  M[3]=余り(作業)  M[4]=フレームリンク置き場
+#   M[5]=SUBTRACT の M[0](余りコピー)  M[6]=SUBTRACT の M[1](B コピー)
+DIVIDE:
+  MOVE 0
+  READ
+  MOVE 3
+  WRITE
+  SET 0
+  MOVE 2
+  WRITE
+DIVLOOP:
+  MOVE 3
+  READ
+  MOVE 5
+  WRITE
+  MOVE 1
+  READ
+  MOVE 6
+  WRITE
+  MOVE 5
+  CALL SUBTRACT
+  IFNEG DIVEND
+  MOVE 3
+  WRITE
+  MOVE 2
+  READ
+  INC
+  WRITE
+  JUMP DIVLOOP
+DIVEND:
+  MOVE 2
+  READ
+  RET
+
+SUBTRACT:
+SUBLOOP:
+  MOVE 1
+  READ
+  IFZERO SUBDONE
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  DEC
+  WRITE
+  JUMP SUBLOOP
+SUBDONE:
+  MOVE 0
+  READ
+  RET`,
+
+  fact: `# M[0]=N → register = N! (階乗)
+# M[2]=結果  M[3]=カウンタ  M[4]=フレームリンク置き場
+# M[5]=MULTIPLY の M[0]  M[6]=MULTIPLY の M[1]
+FACTORIAL:
+  MOVE 0
+  READ
+  MOVE 3
+  WRITE
+  SET 1
+  MOVE 2
+  WRITE
+FACTLOOP:
+  MOVE 3
+  READ
+  IFZERO FACTEND
+  MOVE 2
+  READ
+  MOVE 5
+  WRITE
+  MOVE 3
+  READ
+  MOVE 6
+  WRITE
+  MOVE 5
+  CALL MULTIPLY
+  MOVE 2
+  WRITE
+  MOVE 3
+  READ
+  DEC
+  WRITE
+  JUMP FACTLOOP
+FACTEND:
+  MOVE 2
+  READ
+  RET
+
+MULTIPLY:
+  SET 0
+  MOVE 2
+  WRITE
+MLOOP:
+  MOVE 1
+  READ
+  IFZERO MEND
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  MOVE 3
+  WRITE
+MILOOP:
+  MOVE 3
+  READ
+  IFZERO MNEXT
+  DEC
+  WRITE
+  MOVE 2
+  READ
+  INC
+  WRITE
+  JUMP MILOOP
+MNEXT:
+  JUMP MLOOP
+MEND:
+  MOVE 2
+  READ
+  RET`,
+
+  fib: `# M[0]=N → register = fib(N)  (0,1,1,2,3,5,8,…)
+# M[2]=prev  M[3]=curr  M[4]=counter
+# M[5]=フレームリンク置き場  M[6]=ADD の M[0]  M[7]=ADD の M[1]
+FIBONACCI:
+  MOVE 0
+  READ
+  IFZERO FIBZERO
+  DEC
+  IFZERO FIBONE
+  MOVE 4
+  WRITE
+  SET 0
+  MOVE 2
+  WRITE
+  SET 1
+  MOVE 3
+  WRITE
+FIBLOOP:
+  MOVE 4
+  READ
+  IFZERO FIBEND
+  DEC
+  WRITE
+  MOVE 2
+  READ
+  MOVE 6
+  WRITE
+  MOVE 3
+  READ
+  MOVE 7
+  WRITE
+  MOVE 6
+  CALL ADD
+  MOVE 5
+  WRITE
+  MOVE 3
+  READ
+  MOVE 2
+  WRITE
+  MOVE 5
+  READ
+  MOVE 3
+  WRITE
+  JUMP FIBLOOP
+FIBEND:
+  MOVE 3
+  READ
+  RET
+FIBZERO:
+  SET 0
+  RET
+FIBONE:
+  SET 1
+  RET
+
+ADD:
+  MOVE 1
+  READ
+  MOVE 2
+  WRITE
+ADDLOOP:
+  MOVE 2
+  READ
+  IFZERO ADDEND
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  INC
+  WRITE
+  JUMP ADDLOOP
+ADDEND:
+  MOVE 0
+  READ
+  RET`,
+
+  mul: `# M[0]=A, M[1]=B → register = A * B
+MULTIPLY:
+  SET 0
+  MOVE 2
+  WRITE
+MLOOP:
+  MOVE 1
+  READ
+  IFZERO MEND
+  DEC
+  WRITE
+  MOVE 0
+  READ
+  MOVE 3
+  WRITE
+MILOOP:
+  MOVE 3
+  READ
+  IFZERO MNEXT
+  DEC
+  WRITE
+  MOVE 2
+  READ
+  INC
+  WRITE
+  JUMP MILOOP
+MNEXT:
+  JUMP MLOOP
+MEND:
+  MOVE 2
+  READ
+  RET`,
+};
+
+$('snippetNames').innerHTML = Object.keys(SNIPPETS).map(k => `<option value="${k}">`).join('');
+
+$('snippetBtn').addEventListener('click', () => {
+  const box = $('snippetBox'), opening = box.hidden;
+  box.hidden = !opening;
+  $('snippetBtn').classList.toggle('on', opening);
+  if (opening) { $('snippetInput').value = ''; $('snippetInput').focus(); }
+});
+$('snippetInput').addEventListener('input', e => {
+  const k = e.target.value.trim().toLowerCase();
+  e.target.classList.toggle('bad', !!k && !(k in SNIPPETS));
+});
+$('snippetInput').addEventListener('keydown', e => {
+  if (e.key === 'Escape') $('snippetBtn').click();
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const code = SNIPPETS[e.target.value.trim().toLowerCase()];
+  if (!code) return;
+  progInput.value = code + '\n';
+  progInput.focus();
+  updateLineNums();
+  resetPC();
+  $('snippetBtn').click();
+});
+
+// ── エディタ ────────────────────────────────────────────────────────────────
+const lineNums = $('lineNums'), progInput = $('progInput');
+const LINE_H = 22;
+
+function updateLineNums() {
+  const n = Math.max(1, progInput.value.split('\n').length);
+  while (lineNums.children.length < n) {
+    const d = document.createElement('div');
+    d.className = 'ln';
+    d.textContent = lineNums.children.length + 1;
+    lineNums.appendChild(d);
+  }
+  while (lineNums.children.length > n) lineNums.lastChild.remove();
+}
+function highlightLine(i) {                 // 0 始まり。-1 で消す
+  lineNums.querySelector('.ln.active')?.classList.remove('active');
+  if (i >= 0) lineNums.children[i]?.classList.add('active');
+}
+function scrollToLine(i) {
+  lineNums.scrollTop = progInput.scrollTop = Math.max(0, (i - 2) * LINE_H);
+}
+function say(text, err = false) {
+  $('status').textContent = text;
+  $('status').classList.toggle('err', err);
+}
+progInput.addEventListener('input', () => { updateLineNums(); resetPC(); });
+progInput.addEventListener('scroll', () => { lineNums.scrollTop = progInput.scrollTop; });
+updateLineNums();
+
+// ── インタプリタ ────────────────────────────────────────────────────────────
+let pc = 0;                // 次に実行する行（0 始まり）
+let running = false, abort = false;
+
+const stripComment = s => s.replace(/#.*$/, '').trim();
+const LABEL_RE = /^([A-Za-z_]\w*):$/;
+const CMD_RE = /^(SET|LEFT|RIGHT|MOVE|READ|WRITE|INC|DEC|NEG|JUMP|IFZERO|IFNEG|CALL|RET)\s*(-?\d+|[A-Za-z_]\w*)?$/i;
+
+function resetPC() { pc = 0; highlightLine(-1); }
+
+function buildLabelMap(lines) {
+  const map = {};
+  lines.forEach((l, i) => { const m = stripComment(l).match(LABEL_RE); if (m) map[m[1].toUpperCase()] = i; });
+  return map;
+}
+
+/** ラベル名 or 行番号（1 始まり）→ 行インデックス。未定義なら null */
+function resolveTarget(arg, labels) {
+  if (/^-?\d+$/.test(arg)) return Number(arg) - 1;
+  return arg.toUpperCase() in labels ? labels[arg.toUpperCase()] : null;
+}
+
+/**
+ * pc の行を 1 命令だけ実行する（ステップ実行・連続実行で共通）。
+ * 戻り値: 'ok' | 'end'（行がなくなった）| 'error'
+ */
+async function execOne(lines, labels) {
+  for (; pc < lines.length; pc++) {                         // 空行・コメント・ラベル行を飛ばす
+    const s = stripComment(lines[pc]);
+    if (s && !LABEL_RE.test(s)) break;
+  }
+  if (pc >= lines.length) return 'end';
+
+  highlightLine(pc);
+  scrollToLine(pc);
+  const m = stripComment(lines[pc]).match(CMD_RE);
+  if (!m) { say(`行${pc + 1}: 不明な命令 "${lines[pc].trim()}"`, true); return 'error'; }
+
+  const cmd = m[1].toUpperCase(), a = m[2];
+  const num = a !== undefined && /^-?\d+$/.test(a) ? Number(a) : a;
+  const jumpTo = () => {
+    if (a === undefined) return lines.length;               // 引数なし: プログラム末尾へ
+    const t = resolveTarget(a, labels);
+    if (t === null) say(`行${pc + 1}: ラベル "${a}" が見つかりません`, true);
+    return t;
+  };
+
+  let next = pc + 1;
+  switch (cmd) {
+    case 'SET':   tm.set(num ?? 0); break;
+    case 'LEFT':  await tm.left(); break;
+    case 'RIGHT': await tm.right(); break;
+    case 'MOVE':  await tm.move(num); break;
+    case 'READ':  tm.read(); break;
+    case 'WRITE': tm.write(); break;
+    case 'INC':   tm.inc(num ?? 1); break;
+    case 'DEC':   tm.dec(num ?? 1); break;
+    case 'NEG':   tm.neg(); break;
+    case 'JUMP': case 'IFZERO': case 'IFNEG': {
+      const taken = cmd === 'JUMP' || (cmd === 'IFZERO' ? tm.register === 0 : tm.register < 0);
+      Sound.jump(taken);
+      if (taken) { next = jumpTo(); if (next === null) return 'error'; }
+      break;
+    }
+    case 'CALL': {
+      if (a === undefined) { say(`行${pc + 1}: CALL にはラベルが必要です`, true); return 'error'; }
+      const t = jumpTo(); if (t === null) return 'error';
+      tm.call(pc + 1);
+      next = t;
+      break;
+    }
+    case 'RET': {
+      const r = tm.ret();
+      if (r === null) { say(`行${pc + 1}: コールスタックが空です（CALL していないのに RET）`, true); return 'error'; }
+      next = r;
+      break;
+    }
+  }
+  pc = next;
+  return 'ok';
+}
+
+function setRunning(r) {
+  running = r;
+  $('runBtn').disabled = $('stepBtn').disabled = r;
+  $('stopBtn').disabled = !r;
+}
+
+async function stepProg() {
+  if (running) return;
+  Sound.init();
+  const lines = progInput.value.split('\n');
+  const r = await execOne(lines, buildLabelMap(lines));
+  if (r === 'end') { resetPC(); say('プログラム終了（先頭に戻ります）'); }
+  else if (r === 'error') pc++;
+  else say(`次は ${Math.min(pc + 1, lines.length)} 行目`);
+}
+
+async function runProg() {
+  if (running) return;
+  Sound.init();
+  const lines = progInput.value.split('\n');
+  if (lines.every(l => !stripComment(l))) return;
+  const labels = buildLabelMap(lines);
+
+  setRunning(true);
+  abort = false;
+  say(pc === 0 ? '実行中…' : `行${pc + 1} から再開…`);
+
+  let steps = 0, result = 'ok';
+  while (!abort && steps < MAX_STEPS) {
+    result = await execOne(lines, labels);
+    if (result !== 'ok') break;
+    steps++;
+    if (!tm.fast) await sleep(80);
+  }
+
+  if (result === 'error') { /* メッセージは execOne が表示済み */ }
+  else if (abort) say(`停止しました（${steps} ステップ）`);
+  else if (steps >= MAX_STEPS) say(`最大ステップ数（${MAX_STEPS}）に達したので中断しました。無限ループかも？`, true);
+  else say(`プログラム終了（${steps} ステップ）。レジスタ = ${tm.register}`);
+
+  if (!abort && result === 'end') resetPC();
+  setRunning(false);
+}
+
+$('runBtn').addEventListener('click', runProg);
+$('stepBtn').addEventListener('click', stepProg);
+$('stopBtn').addEventListener('click', () => { abort = true; });
+$('fastBtn').addEventListener('click', () => {
+  tm.fast = !tm.fast;
+  Sound.muted = tm.fast;
+  $('fastBtn').classList.toggle('on', tm.fast);
+});
+
+// AudioContext はユーザー操作が必要 — 最初のクリックで初期化
+document.addEventListener('click', () => Sound.init(), { once: true });
+</script>
+</body>
+</html>
