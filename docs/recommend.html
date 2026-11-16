@@ -43,6 +43,14 @@
   .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px;
     padding:18px; display:flex; flex-direction:column; align-items:center; }
   canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; }
+  #cv { cursor:pointer; }
+  #cellEdit { position:absolute; width:52px; height:34px; font:700 16px sans-serif; text-align:center;
+    border:2px solid var(--accent); border-radius:6px; background:#fff; color:var(--text); outline:none;
+    padding:0; z-index:10; -moz-appearance:textfield; }
+  #cellEdit::-webkit-inner-spin-button, #cellEdit::-webkit-outer-spin-button { -webkit-appearance:none; }
+  .edit-hint { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12.5px;
+    color:var(--muted); margin-top:10px; }
+  .edit-hint button { padding:5px 10px; font-size:12.5px; }
   .desc { margin-top:14px; min-height:22px; font-size:14px; align-self:stretch;
     display:flex; align-items:center; gap:10px; }
   .desc .badge { font-size:11px; padding:2px 8px; border-radius:999px;
@@ -85,7 +93,9 @@
   ol.reco li .rv { text-align:right; font-variant-numeric:tabular-nums; color:var(--predict); font-weight:600; }
   .reco-empty { color:var(--muted); font-size:13px; }
 
-  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  .transport { display:flex; gap:6px; flex-wrap:wrap; }
+  .transport button { padding:9px 11px; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:-6px 0 18px; }
   #progress { flex:1; min-width:180px; accent-color:var(--accent); }
   .step-label { font-size:13px; color:var(--muted); white-space:nowrap; }
   kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
@@ -125,27 +135,34 @@
     <div class="spacer"></div>
     <div class="field">
       <label>再生速度</label>
-      <input type="range" id="speed" min="1" max="60" value="34" style="width:130px;accent-color:var(--accent)">
+      <input type="range" id="speed" min="1" max="60" value="34" style="width:100px;accent-color:var(--accent)">
     </div>
+    <div class="transport">
+      <button id="toStart" title="最初へ">⏮</button>
+      <button id="prev" title="1ステップ戻る">◀ 戻る</button>
+      <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+      <button id="next" title="1ステップ進む">次へ ▶</button>
+      <button id="toEnd" title="最後へ">⏭</button>
+    </div>
+  </div>
+
+  <div class="playbar">
+    <input type="range" id="progress" min="0" max="0" value="0">
+    <span class="step-label" id="stepLabel">0 / 0</span>
   </div>
 
   <div class="layout">
     <div>
       <div class="stage">
         <canvas id="cv" width="600" height="360"></canvas>
+        <div class="edit-hint">
+          <span>✏️ <b>数字のマスをクリック</b>すると評価（1〜5）を書き直せます。0 か空欄で「未評価（·）」。</span>
+          <button id="resetR">↺ 初期値に戻す</button>
+        </div>
         <div class="desc">
           <span class="badge" id="opbadge">準備完了</span>
           <span id="descText">評価行列（行＝ユーザー・列＝作品）。▶ または「次へ」で1ステップずつ進めます。</span>
         </div>
-      </div>
-      <div class="playbar">
-        <button id="toStart" title="最初へ">⏮</button>
-        <button id="prev" title="1ステップ戻る">◀ 戻る</button>
-        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
-        <button id="next" title="1ステップ進む">次へ ▶</button>
-        <button id="toEnd" title="最後へ">⏭</button>
-        <input type="range" id="progress" min="0" max="0" value="0">
-        <span class="step-label" id="stepLabel">0 / 0</span>
       </div>
     </div>
 
@@ -225,6 +242,7 @@ const R = [
   [1, 2, 2, 1, 2, 1, 4, 5],   // ナナ  （アクティブ派・好みが逆）
   [4, 4, 3, 3, 4, 3, 4, 4],   // リン  （広く高評価）
 ];
+const R0 = R.map(r => r.slice());   // 初期値（「初期値に戻す」用）
 const U = users.length, I = items.length;
 
 // 行/列ハイライトのコード
@@ -590,6 +608,41 @@ $("prev").onclick = () => { stop(); goTo(cur-1); };
 $("toStart").onclick = () => { stop(); goTo(0); };
 $("toEnd").onclick = () => { stop(); goTo(frames.length-1); };
 $("progress").oninput = e => { stop(); goTo(parseInt(e.target.value,10)); };
+
+// ---- 評価値の編集（セルをクリック → 数字を入力 → Enter/フォーカス外れで確定） ----
+let editBox = null;
+function closeEdit(){ if(editBox){ const b=editBox; editBox=null; b.remove(); } }
+cv.addEventListener("click", e => {
+  const rc = cv.getBoundingClientRect(), sc = cv.width / rc.width;
+  const x = (e.clientX - rc.left) * sc, y = (e.clientY - rc.top) * sc;
+  const i = Math.floor((x - labelW) / cw), u = Math.floor((y - headerH) / ch);
+  if (i < 0 || i >= I || u < 0 || u >= U) return;
+  stop(); closeEdit();
+  const box = document.createElement("input");
+  box.id = "cellEdit"; box.type = "number"; box.min = 0; box.max = 5; box.step = 1;
+  box.value = R[u][i] || "";
+  const cx = rc.left + window.scrollX + (cellX(i) + cw/2) / sc, cy = rc.top + window.scrollY + (cellY(u) + ch/2) / sc;
+  box.style.left = (cx - 26) + "px"; box.style.top = (cy - 17) + "px";
+  document.body.appendChild(box);
+  editBox = box;
+  box.focus(); box.select();
+  let cancelled = false;
+  box.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") { ev.preventDefault(); box.blur(); }
+    else if (ev.key === "Escape") { cancelled = true; box.blur(); }
+    ev.stopPropagation();
+  });
+  box.addEventListener("blur", () => {
+    if (editBox !== box) return;
+    editBox = null; box.remove();
+    if (cancelled) return;
+    const v = box.value.trim() === "" ? 0 : clamp(Math.round(Number(box.value)), 0, 5);
+    if (isNaN(v) || v === R[u][i]) return;
+    R[u][i] = v;
+    rebuild();
+  });
+});
+$("resetR").onclick = () => { closeEdit(); R0.forEach((r,u) => r.forEach((v,i) => R[u][i] = v)); rebuild(); };
 
 document.addEventListener("keydown", e => {
   if (e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;

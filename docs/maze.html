@@ -140,10 +140,21 @@
     </div>
     <button id="newMaze">🌀 新しい迷路</button>
     <button id="rerun">↻ 探索やり直し</button>
-    <div class="spacer"></div>
     <div class="field">
       <label>再生速度</label>
       <input type="range" id="speed" min="1" max="60" value="30" style="width:140px;accent-color:var(--accent)">
+    </div>
+    <div class="field" style="flex:1;min-width:380px">
+      <label>再生の操作</label>
+      <div class="playbar" style="margin:0">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1歩戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+        <button id="next" title="1歩進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
     </div>
   </div>
 
@@ -157,15 +168,6 @@
         </div>
       </div>
 
-      <div class="playbar">
-        <button id="toStart" title="最初へ">⏮</button>
-        <button id="prev" title="1歩戻る">◀ 戻る</button>
-        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
-        <button id="next" title="1歩進む">次へ ▶</button>
-        <button id="toEnd" title="最後へ">⏭</button>
-        <input type="range" id="progress" min="0" max="0" value="0">
-        <span class="step-label" id="stepLabel">0 / 0</span>
-      </div>
     </div>
 
     <div class="side">

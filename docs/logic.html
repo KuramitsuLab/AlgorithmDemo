@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スイッチと豆電球の論理回路</title>
+<style>
+:root{
+  --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+  --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+  --yellow:#ffd24a; --red:#ff6b6b; --blue:#2f5d8a; --green:#4ade80; --purple:#c084fc;
+  --ink:#06122a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Meiryo,"Hiragino Sans","Yu Gothic",sans-serif;line-height:1.6}
+header{padding:16px 24px 8px}
+header h1{margin:0;font-size:22px;color:var(--accent)}
+header p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;padding:8px 24px 12px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:6px 14px;border-radius:8px;cursor:pointer;font:inherit;font-size:14px}
+.tab:hover{border-color:var(--accent)}
+.tab.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:bold}
+.ctl{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+button.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:6px 14px;border-radius:8px;cursor:pointer;font:inherit;font-size:14px}
+button.btn:hover{border-color:var(--accent)}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;padding:0 24px 24px}
+@media(max-width:980px){.layout{grid-template-columns:1fr}}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.stage svg{width:100%;height:auto;display:block;background:#f7f9fc;border-radius:8px}
+.switches{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.swbtn{min-width:130px;border:2px solid var(--line);background:var(--panel2);color:var(--text);border-radius:10px;padding:8px 14px;cursor:pointer;font:inherit;font-size:15px}
+.swbtn.on{background:var(--green);border-color:var(--green);color:var(--ink);font-weight:bold}
+.swbtn small{color:inherit;opacity:.7;margin-left:6px}
+.status{margin-left:auto;font-size:16px;font-weight:bold;padding:6px 14px;border-radius:10px;background:var(--panel2)}
+.status.lit{background:var(--yellow);color:var(--ink)}
+.side{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card h3{margin:0 0 8px;font-size:15px;color:var(--accent)}
+.card p{margin:4px 0;font-size:13px}
+table.tt{border-collapse:collapse;width:100%;font-size:14px;text-align:center}
+table.tt th{background:var(--accent);color:var(--ink);padding:4px 6px;border:1px solid var(--line)}
+table.tt td{padding:4px 6px;border:1px solid var(--line)}
+table.tt tr.cur td{background:#fff3c4;font-weight:bold}
+.expr{font-size:20px;font-weight:bold;text-align:center;padding:6px;background:var(--panel2);border-radius:8px;font-family:Consolas,Meiryo,monospace}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:22px;height:5px;border-radius:3px;vertical-align:middle;margin-right:4px}
+.muted{color:var(--muted)}
+kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>スイッチと豆電球の論理回路</h1>
+  <p>スイッチ（図のレバーか下のボタン）を切り替えて、豆電球がつく条件を調べよう。AND・OR は配線のつなぎ方、NOT はリレー（電磁石で動くスイッチ）で作る。</p>
+</header>
+
+<div class="controls">
+  <div class="tabs" id="tabs"></div>
+  <button class="btn primary" id="autoBtn">▶ 全パターン自動</button>
+  <label class="ctl">速さ <input type="range" id="speed" min="1" max="10" value="5"></label>
+</div>
+
+<div class="layout">
+  <div class="stage">
+    <svg id="svg" viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="switches" id="switches"></div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>真理値表（回路を実際に動かして作成）</h3><div id="tt"></div></div>
+    <div class="card"><h3>論理式</h3><div class="expr" id="expr"></div></div>
+    <div class="card"><h3>しくみ</h3><div id="desc"></div></div>
+    <div class="card"><h3>凡例</h3>
+      <div class="legend">
+        <span><i style="background:#ff6b6b"></i>電流が流れている</span>
+        <span><i style="background:#9aa7bd"></i>流れていない</span>
+      </div>
+      <p class="muted">操作: <kbd>A</kbd> <kbd>B</kbd> でスイッチ切替、<kbd>Space</kbd> で自動再生。<br>線が交差していても、黒い点（接続点）がなければつながっていない。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ================= 回路モデル ================= */
+// 素子: w=導線, sw=スイッチ(ONで閉), sp=切替スイッチ(c→t0 / t1), ct=リレー接点, bulb=電球, coil=リレーのコイル
+const Wr=(a,b)=>({t:'w',a,b}), SW=(a,b,v)=>({t:'sw',a,b,v}), SP=(c,t0,t1,v)=>({t:'sp',c,t0,t1,v});
+const CT=(a,b,r)=>({t:'ct',a,b,r}), BL=(a,b)=>({t:'bulb',a,b}), CL=(a,b,r)=>({t:'coil',a,b,r});
+
+// 右端の戻り線（電球 → 電池のマイナス）
+function ret(rows){ return rows; }
+
+const CIRCUITS = {
+  and:{
+    name:'AND（直列）', expr:'A ・ B',
+    inputs:['A','B'],
+    nodes:{P:[60,60],a1:[150,60],a2:[270,60],b1:[350,60],b2:[470,60],l1:[580,60],l2:[700,60],R1:[760,60],R2:[760,340],N:[60,340]},
+    els:[Wr('P','a1'),SW('a1','a2','A'),Wr('a2','b1'),SW('b1','b2','B'),Wr('b2','l1'),BL('l1','l2'),Wr('l2','R1'),Wr('R1','R2'),Wr('R2','N')],
+    desc:'<p>スイッチ A と B を<b>直列</b>（一本道）につなぐ。どれか一つでも切れていると電流が通れない。</p><p>だから <b>A も B も ON のときだけ</b>点灯する。</p>'
+  },
+  or:{
+    name:'OR（並列）', expr:'A ＋ B',
+    inputs:['A','B'],
+    nodes:{P:[60,60],J1:[110,60],a1:[170,60],a2:[290,60],J2:[350,60],J1b:[110,160],b1:[170,160],b2:[290,160],J2b:[350,160],l1:[580,60],l2:[700,60],R1:[760,60],R2:[760,340],N:[60,340]},
+    els:[Wr('P','J1'),Wr('J1','a1'),SW('a1','a2','A'),Wr('a2','J2'),Wr('J1','J1b'),Wr('J1b','b1'),SW('b1','b2','B'),Wr('b2','J2b'),Wr('J2b','J2'),Wr('J2','l1'),BL('l1','l2'),Wr('l2','R1'),Wr('R1','R2'),Wr('R2','N')],
+    desc:'<p>スイッチ A と B を<b>並列</b>（分かれ道）につなぐ。どちらか一方の道が通れば電流は流れる。</p><p>だから <b>A か B のどちらか（または両方）が ON</b> なら点灯する。</p>'
+  },
+  not:{
+    name:'NOT（リレー）', expr:'Ā （A でない）',
+    inputs:['A'],
+    nodes:{P:[60,60],J:[110,60],c1:[430,60],c2:[540,60],l1:[600,60],l2:[700,60],R1:[760,60],R2:[760,340],N:[60,340],m2:[580,340],
+           K:[110,200],s1:[150,200],s2:[250,200],k1:[430,200],k2:[540,200],m:[580,200]},
+    els:[Wr('P','J'),Wr('J','c1'),CT('c1','c2','R'),Wr('c2','l1'),BL('l1','l2'),Wr('l2','R1'),Wr('R1','R2'),Wr('R2','m2'),Wr('m2','N'),
+         Wr('J','K'),Wr('K','s1'),SW('s1','s2','A'),Wr('s2','k1'),CL('k1','k2','R'),Wr('k2','m'),Wr('m','m2')],
+    desc:'<p>電球の回路に、<b>ふだんは閉じている</b>リレー接点を入れる。</p><p>スイッチ A を ON にするとコイルが電磁石になって接点を<b>引き離し</b>、電球の回路が切れる。つまり <b>A が ON → 消灯、OFF → 点灯</b>（反転）。</p>'
+  },
+  nand:{
+    name:'NAND（AND＋NOT）', expr:'¬( A ・ B )',
+    inputs:['A','B'],
+    nodes:{P:[60,60],J:[110,60],c1:[430,60],c2:[540,60],l1:[600,60],l2:[700,60],R1:[760,60],R2:[760,340],N:[60,340],m2:[580,340],
+           K:[110,200],s1:[150,200],s2:[250,200],t1:[290,200],t2:[390,200],k1:[430,200],k2:[540,200],m:[580,200]},
+    els:[Wr('P','J'),Wr('J','c1'),CT('c1','c2','R'),Wr('c2','l1'),BL('l1','l2'),Wr('l2','R1'),Wr('R1','R2'),Wr('R2','m2'),Wr('m2','N'),
+         Wr('J','K'),Wr('K','s1'),SW('s1','s2','A'),Wr('s2','t1'),SW('t1','t2','B'),Wr('t2','k1'),CL('k1','k2','R'),Wr('k2','m'),Wr('m','m2')],
+    desc:'<p>コイルを <b>AND（直列）</b>で駆動し、電球側は NOT 用の「ふだん閉じた接点」。</p><p>A も B も ON でコイルが働いて消灯。それ以外は点灯。AND を NOT でひっくり返した形で、<b>NAND</b> と呼ぶ。</p>'
+  },
+  nor:{
+    name:'NOR（OR＋NOT）', expr:'¬( A ＋ B )',
+    inputs:['A','B'],
+    nodes:{P:[60,60],J:[110,60],c1:[430,60],c2:[540,60],l1:[600,60],l2:[700,60],R1:[760,60],R2:[760,340],N:[60,340],m2:[580,340],
+           K:[110,200],s1:[150,200],s2:[250,200],j:[300,200],K2:[110,270],u1:[150,270],u2:[250,270],j2:[300,270],k1:[430,200],k2:[540,200],m:[580,200]},
+    els:[Wr('P','J'),Wr('J','c1'),CT('c1','c2','R'),Wr('c2','l1'),BL('l1','l2'),Wr('l2','R1'),Wr('R1','R2'),Wr('R2','m2'),Wr('m2','N'),
+         Wr('J','K'),Wr('K','s1'),SW('s1','s2','A'),Wr('s2','j'),Wr('K','K2'),Wr('K2','u1'),SW('u1','u2','B'),Wr('u2','j2'),Wr('j2','j'),Wr('j','k1'),
+         CL('k1','k2','R'),Wr('k2','m'),Wr('m','m2')],
+    desc:'<p>コイルを <b>OR（並列）</b>で駆動し、電球側は「ふだん閉じた接点」。</p><p>A か B のどちらかが ON ならコイルが働いて消灯。両方 OFF のときだけ点灯。OR を NOT で反転した <b>NOR</b>。</p>'
+  },
+  xor:{
+    name:'XOR（階段スイッチ）', expr:'A ⊕ B',
+    inputs:['A','B'],
+    nodes:{P:[60,60],q:[100,60],q2:[100,130],ac:[150,130],a0:[260,90],a1:[260,170],b0:[420,90],b1:[420,170],bc:[530,130],
+           l1:[590,130],l2:[700,130],R1:[760,130],R2:[760,340],N:[60,340]},
+    els:[Wr('P','q'),Wr('q','q2'),Wr('q2','ac'),SP('ac','a0','a1','A'),Wr('a0','b1'),Wr('a1','b0'),SP('bc','b0','b1','B'),Wr('bc','l1'),BL('l1','l2'),Wr('l2','R1'),Wr('R1','R2'),Wr('R2','N')],
+    desc:'<p>廊下や階段の照明でおなじみの<b>切替スイッチ（2か所で操作）</b>。レバーは常に上下どちらかにつながる。</p><p>2本の線を<b>たすき掛け</b>につないであるので、<b>A と B が違う</b>ときだけ電流が通る（排他的論理和）。</p>'
+  }
+};
+
+/* ================= シミュレーション ================= */
+function sim(c, st){
+  let coil = {}, out = null;
+  for(let it=0; it<6; it++){
+    const edges=[];
+    c.els.forEach((e,i)=>{
+      if(e.t==='w') edges.push({a:e.a,b:e.b,on:true,k:i+''});
+      else if(e.t==='sw') edges.push({a:e.a,b:e.b,on:!!st[e.v],k:i+''});
+      else if(e.t==='ct') edges.push({a:e.a,b:e.b,on:!coil[e.r],k:i+''});
+      else if(e.t==='sp'){
+        edges.push({a:e.c,b:e.t0,on:!st[e.v],k:i+'a'});
+        edges.push({a:e.c,b:e.t1,on:!!st[e.v],k:i+'b'});
+      }
+    });
+    const closed=edges.filter(e=>e.on), adj={};
+    closed.forEach(e=>{(adj[e.a]=adj[e.a]||[]).push(e.b);(adj[e.b]=adj[e.b]||[]).push(e.a);});
+    const reach=s=>{const seen=new Set(s),q=[...s];while(q.length){const x=q.pop();(adj[x]||[]).forEach(y=>{if(!seen.has(y)){seen.add(y);q.push(y);}});}return seen;};
+    const E=reach(['P']);
+    const loads=c.els.filter(e=>e.t==='bulb'||e.t==='coil');
+    const act={};
+    loads.forEach(e=>{act[e.t==='bulb'?'L':e.r]=E.has(e.a);});
+    const next={}; loads.forEach(e=>{if(e.t==='coil')next[e.r]=act[e.r];});
+    const same=Object.keys(next).every(k=>!!next[k]===!!coil[k]);
+    coil=next;
+    // 戻り経路
+    const R=reach(loads.filter(e=>act[e.t==='bulb'?'L':e.r]).map(e=>e.b));
+    let cand=closed.filter(e=>(E.has(e.a)&&E.has(e.b))||(R.has(e.a)&&R.has(e.b)));
+    const term=new Set(['P','N']);
+    loads.forEach(e=>{if(act[e.t==='bulb'?'L':e.r]){term.add(e.a);term.add(e.b);}});
+    for(;;){ // 行き止まりの枝は電流が流れないので除く
+      const deg={}; cand.forEach(e=>{deg[e.a]=(deg[e.a]||0)+1;deg[e.b]=(deg[e.b]||0)+1;});
+      const nc=cand.filter(e=>(term.has(e.a)||deg[e.a]>1)&&(term.has(e.b)||deg[e.b]>1));
+      if(nc.length===cand.length)break; cand=nc;
+    }
+    out={act, coil:{...coil}, live:new Set(cand.map(e=>e.k)), any:Object.values(act).some(Boolean)};
+    if(same)break;
+  }
+  return out;
+}
+
+function combos(n){ const r=[]; for(let i=0;i<(1<<n);i++){const a=[];for(let j=n-1;j>=0;j--)a.push((i>>j)&1);r.push(a);} return r; }
+function stOf(c,row){ const s={}; c.inputs.forEach((v,i)=>s[v]=row[i]); return s; }
+
+/* ================= 描画 ================= */
+const LIVE='#ff6b6b', OFFC='#9aa7bd', DARK='#5d6b82', ACC='#2f7fd9';
+let cur='and', state={}, auto=null;
+
+function P(c,n){ return c.nodes[n]; }
+function line(p,q,col,w=5){ return `<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>`; }
+function dot(p,col,r=6){ return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="${col}"/>`; }
+function txt(x,y,s,o={}){ return `<text x="${x}" y="${y}" text-anchor="${o.a||'middle'}" font-size="${o.s||14}" fill="${o.c||'#1a2030'}" font-weight="${o.b?'bold':'normal'}" font-family="Meiryo,sans-serif">${s}</text>`; }
+
+function render(){
+  const c=CIRCUITS[cur], r=sim(c,state);
+  let g='';
+  // 接続点（3本以上の導線が集まる所）
+  const deg={}, liveNode=new Set();
+  c.els.forEach((e,i)=>{
+    if(e.t==='w'||e.t==='sw'||e.t==='ct'){
+      deg[e.a]=(deg[e.a]||0)+1; deg[e.b]=(deg[e.b]||0)+1;
+      if(r.live.has(i+'')){liveNode.add(e.a);liveNode.add(e.b);}
+    }
+  });
+  // 電池
+  const bp=P(c,'P'), bn=P(c,'N'), bl=r.any;
+  g+=line(bp,[60,182],bl?LIVE:OFFC)+line([60,214],bn,bl?LIVE:OFFC);
+  g+=`<line x1="36" y1="190" x2="84" y2="190" stroke="${DARK}" stroke-width="5"/><line x1="46" y1="206" x2="74" y2="206" stroke="${DARK}" stroke-width="5"/>`;
+  g+=txt(26,186,'＋',{s:16,c:'#c0392b',b:1})+txt(26,222,'－',{s:16,c:ACC,b:1})+txt(100,202,'電池',{a:'start',s:13,c:DARK});
+
+  // リレー連動の点線
+  const coilEl=c.els.find(e=>e.t==='coil'), ctEl=c.els.find(e=>e.t==='ct');
+  if(coilEl&&ctEl){
+    const cx=(P(c,coilEl.a)[0]+P(c,coilEl.b)[0])/2;
+    g+=`<line x1="${cx}" y1="${P(c,ctEl.a)[1]+14}" x2="${cx}" y2="${P(c,coilEl.a)[1]-26}" stroke="${ACC}" stroke-width="2.5" stroke-dasharray="6 5"/>`;
+    g+=txt(cx+8,(P(c,ctEl.a)[1]+P(c,coilEl.a)[1])/2+4,'磁力で接点を動かす',{a:'start',s:12,c:ACC});
+  }
+
+  c.els.forEach((e,i)=>{
+    const k=i+'';
+    if(e.t==='w'){ g+=line(P(c,e.a),P(c,e.b),r.live.has(k)?LIVE:OFFC); }
+    else if(e.t==='sw'||e.t==='ct'){
+      const a=P(c,e.a), b=P(c,e.b);
+      const closed = e.t==='sw' ? !!state[e.v] : !r.coil[e.r];
+      const lv=r.live.has(k);
+      const col = closed ? (lv?LIVE:OFFC) : DARK;
+      const body = closed ? line(a,b,col) : line(a,[b[0]-14,b[1]-36],DARK);
+      const mid=(a[0]+b[0])/2;
+      let lab='';
+      if(e.t==='sw') lab=txt(mid,a[1]-48,'スイッチ '+e.v,{b:1,c:ACC})+txt(mid,a[1]+28,state[e.v]?'ON':'OFF',{s:13,c:state[e.v]?'#1a8a4a':DARK,b:1});
+      else lab=txt(mid,a[1]-48,'リレー接点',{b:1,c:ACC,s:13})+txt(mid,a[1]+28,closed?'閉（ふだん）':'開（引き離された）',{s:12,c:DARK});
+      g+= e.t==='sw'
+        ? `<g class="swg" data-v="${e.v}" style="cursor:pointer"><rect x="${a[0]-10}" y="${a[1]-56}" width="${b[0]-a[0]+20}" height="90" fill="transparent"/>${body}${dot(a,DARK)}${dot(b,DARK)}${lab}</g>`
+        : body+dot(a,DARK)+dot(b,DARK)+lab;
+    }
+    else if(e.t==='sp'){
+      const cc=P(c,e.c), t0=P(c,e.t0), t1=P(c,e.t1), sel=state[e.v]?1:0;
+      const kk=k+(sel?'b':'a'), tt=sel?t1:t0;
+      const lv=r.live.has(kk);
+      const other=sel?t0:t1;
+      const bx=Math.min(cc[0],t0[0]), ex=Math.max(cc[0],t0[0]);
+      g+=`<g class="swg" data-v="${e.v}" style="cursor:pointer"><rect x="${bx-14}" y="${Math.min(t0[1],t1[1])-24}" width="${ex-bx+28}" height="${Math.abs(t1[1]-t0[1])+48}" fill="transparent"/>`
+        +line(cc,tt,lv?LIVE:DARK,6)+dot(cc,DARK,7)+dot(t0,DARK)+dot(t1,DARK)
+        +txt((cc[0]+t0[0])/2,Math.min(t0[1],t1[1])-30,'切替スイッチ '+e.v,{b:1,c:ACC})
+        +txt((cc[0]+t0[0])/2,Math.max(t0[1],t1[1])+36,state[e.v]?'下側':'上側',{s:13,c:DARK,b:1})+`</g>`;
+    }
+    else if(e.t==='bulb'){
+      const a=P(c,e.a), b=P(c,e.b), cx=(a[0]+b[0])/2, cy=a[1], rr=32, on=r.act.L;
+      const col=on?LIVE:OFFC;
+      g+=line(a,[cx-rr,cy],col)+line([cx+rr,cy],b,col);
+      if(on) g+=`<circle cx="${cx}" cy="${cy}" r="66" fill="rgba(255,210,74,.28)"/><circle cx="${cx}" cy="${cy}" r="48" fill="rgba(255,210,74,.45)"/>`;
+      g+=`<circle cx="${cx}" cy="${cy}" r="${rr}" fill="${on?'#ffd24a':'#f7f9fc'}" stroke="${DARK}" stroke-width="3"/>`;
+      g+=`<path d="M${cx-14} ${cy+14} L${cx-8} ${cy-6} L${cx} ${cy+8} L${cx+8} ${cy-6} L${cx+14} ${cy+14}" fill="none" stroke="${on?'#b8860b':DARK}" stroke-width="2.5"/>`;
+      g+=`<rect x="${cx-14}" y="${cy+30}" width="28" height="12" rx="2" fill="${DARK}"/>`;
+      g+=dot(a,DARK)+dot(b,DARK);
+      g+=txt(cx,cy-(on?74:46),on?'点灯！':'消灯',{b:1,s:15,c:on?'#b8860b':DARK});
+    }
+    else if(e.t==='coil'){
+      const a=P(c,e.a), b=P(c,e.b), on=r.act[e.r];
+      g+=`<rect x="${a[0]}" y="${a[1]-24}" width="${b[0]-a[0]}" height="48" rx="6" fill="${on?'#cfe3fa':'#ffffff'}" stroke="${ACC}" stroke-width="3"/>`;
+      let sp=''; for(let x=a[0]+16;x<b[0]-8;x+=14) sp+=`<path d="M${x} ${a[1]+10} q7 -26 14 0" fill="none" stroke="${on?ACC:OFFC}" stroke-width="3"/>`;
+      g+=sp+dot(a,DARK)+dot(b,DARK);
+      g+=txt((a[0]+b[0])/2,a[1]+42,on?'コイル：電磁石 ON':'コイル：OFF',{s:12,c:on?ACC:DARK,b:on});
+    }
+  });
+  // 接続点
+  Object.keys(deg).forEach(n=>{ if(deg[n]>=3) g+=dot(P(c,n),liveNode.has(n)?LIVE:OFFC,7); });
+  $('svg').innerHTML=g;
+  $('svg').querySelectorAll('.swg').forEach(el=>el.addEventListener('click',()=>toggle(el.dataset.v)));
+
+  // スイッチボタン
+  $('switches').innerHTML = c.inputs.map(v=>`<button class="swbtn ${state[v]?'on':''}" data-v="${v}">スイッチ ${v}：${state[v]?'ON':'OFF'}<small>[${v.toLowerCase()}]</small></button>`).join('')
+    + `<div class="status ${r.act.L?'lit':''}">電球：${r.act.L?'💡 点灯':'消灯'}</div>`;
+  $('switches').querySelectorAll('.swbtn').forEach(b=>b.addEventListener('click',()=>toggle(b.dataset.v)));
+
+  // 真理値表
+  const rows=combos(c.inputs.length);
+  $('tt').innerHTML = `<table class="tt"><tr>${c.inputs.map(v=>`<th>${v}</th>`).join('')}<th>電球</th></tr>`
+    + rows.map(row=>{
+      const lit=sim(c,stOf(c,row)).act.L;
+      const isCur=c.inputs.every((v,i)=>!!state[v]===!!row[i]);
+      return `<tr class="${isCur?'cur':''}">${row.map(x=>`<td>${x}</td>`).join('')}<td>${lit?'1 💡':'0'}</td></tr>`;
+    }).join('') + `</table><p class="muted">1 = ON／点灯、0 = OFF／消灯</p>`;
+  $('expr').textContent=c.expr;
+  $('desc').innerHTML=c.desc;
+}
+
+function toggle(v){ state[v]=state[v]?0:1; render(); }
+function select(k){
+  stopAuto(); cur=k; state={}; CIRCUITS[k].inputs.forEach(v=>state[v]=0);
+  $('tabs').querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
+  render();
+}
+
+/* 全パターン自動 */
+let autoIdx=0;
+function stopAuto(){ if(auto){clearTimeout(auto);auto=null;} $('autoBtn').textContent='▶ 全パターン自動'; }
+function autoTick(){
+  const c=CIRCUITS[cur], rows=combos(c.inputs.length);
+  state=stOf(c,rows[autoIdx%rows.length]); autoIdx++; render();
+  auto=setTimeout(autoTick, 2100-(+$('speed').value)*180);
+}
+function toggleAuto(){
+  if(auto){stopAuto();return;}
+  autoIdx=0; $('autoBtn').textContent='⏸ 停止'; autoTick();
+}
+
+/* 初期化 */
+$('tabs').innerHTML=Object.keys(CIRCUITS).map(k=>`<button class="tab" data-k="${k}">${CIRCUITS[k].name}</button>`).join('');
+$('tabs').querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>select(b.dataset.k)));
+$('autoBtn').addEventListener('click',toggleAuto);
+document.addEventListener('keydown',e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  const k=e.key.toUpperCase();
+  if(e.key===' '){e.preventDefault();toggleAuto();}
+  else if(CIRCUITS[cur].inputs.includes(k)){stopAuto();toggle(k);}
+});
+select('and');
+</script>
+</body>
+</html>

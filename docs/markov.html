@@ -136,14 +136,21 @@
       <label>&nbsp;</label>
       <button id="regen" title="別の文を生成（R）">🎲 別の文を生成</button>
     </div>
-    <div class="spacer"></div>
-    <div class="field">
-      <label>&nbsp;</label>
-      <button id="play" class="primary" title="再生/一時停止（Space）">▶ 再生</button>
-    </div>
     <div class="field">
       <label>再生速度</label>
       <input type="range" id="speed" min="1" max="60" value="30" style="width:130px">
+    </div>
+    <div class="field" style="flex:1;min-width:380px">
+      <label>再生の操作</label>
+      <div class="playbar" style="margin:0">
+        <button id="toStart" title="最初へ">⏮</button>
+        <button id="prev" title="1ステップ戻る">◀ 戻る</button>
+        <button id="play" class="primary" title="再生/一時停止（Space）">▶ 再生</button>
+        <button id="next" title="1ステップ進む">次へ ▶</button>
+        <button id="toEnd" title="最後へ">⏭</button>
+        <input type="range" id="progress" min="0" max="0" value="0">
+        <span class="step-label" id="stepLabel">0 / 0</span>
+      </div>
     </div>
   </div>
 
@@ -156,14 +163,6 @@
           <span class="badge" id="opbadge">準備完了</span>
           <span id="descText">▶ または「次へ」で、1文字ずつ生成していきましょう。</span>
         </div>
-      </div>
-      <div class="playbar">
-        <button id="toStart" title="最初へ">⏮</button>
-        <button id="prev" title="1ステップ戻る">◀ 戻る</button>
-        <button id="next" title="1ステップ進む">次へ ▶</button>
-        <button id="toEnd" title="最後へ">⏭</button>
-        <input type="range" id="progress" min="0" max="0" value="0">
-        <span class="step-label" id="stepLabel">0 / 0</span>
       </div>
     </div>
 

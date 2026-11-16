@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>モンテカルロ法 — 乱数で円周率を求める</title>
+<style>
+  :root {
+    --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+    --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+    --in:#ff6b6b; --out:#2f5d8a; --best:#4ade80; --cand:#ffd24a; --goal:#c084fc;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); font-size:13px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
+  .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:18px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  select, button, input { font-family:inherit; }
+  select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  input[type=range] { accent-color:var(--accent); }
+  .val { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+    transition:background .12s,border-color .12s; }
+  button:hover:not(:disabled){ background:#e4eaf5; border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#1f6bc4; }
+  .chk { display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; padding-bottom:8px; }
+  .layout { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start; }
+  @media (max-width:980px){ .layout { grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 10px; font-size:14px; }
+  canvas { background:#f7f9fc; border-radius:8px; max-width:100%; height:auto; display:block; }
+  .big { display:flex; gap:22px; flex-wrap:wrap; align-items:baseline; margin-bottom:12px; }
+  .big .pi { font-size:34px; font-weight:700; font-family:Consolas,monospace; color:var(--accent);
+    font-variant-numeric:tabular-nums; }
+  .big .st { font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .big .st b { color:var(--text); }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:13px; height:13px; border-radius:4px; display:inline-block; }
+  .col { display:flex; flex-direction:column; gap:18px; min-width:0; }
+  .note { font-size:12.5px; color:var(--muted); line-height:1.6; }
+  .note b { color:var(--text); }
+  table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums; }
+  th, td { padding:5px 8px; text-align:right; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  td:first-child, th:first-child { text-align:left; }
+  tr.cur td { background:#fff6d6; }
+  .playbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:18px 0; }
+  #progress { flex:1; min-width:180px; accent-color:var(--accent); }
+  .step-label { font-size:13px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; font-family:inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎯 モンテカルロ法</h1>
+  <span class="sub">正方形に乱数で点を打つだけで円周率 π が求まる — 点の数 N を増やすと π̂ はどう近づく？</span>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field">
+      <label>最大の点の数 Nmax</label>
+      <select id="nmax">
+        <option value="1000" selected>1,000</option>
+        <option value="10000">10,000</option>
+        <option value="100000">100,000</option>
+        <option value="1000000">1,000,000</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>再生速度 <span class="val" id="spdVal">5</span></label>
+      <input type="range" id="speed" min="1" max="10" value="5" style="width:140px">
+    </div>
+    <label class="chk"><input type="checkbox" id="multi" checked> 別の試行(9回)も重ねて表示</label>
+    <button id="reseed">🎲 乱数をふり直す</button>
+  </div>
+
+  <div class="playbar">
+    <button id="bFirst">⏮</button>
+    <button id="bPrev">◀ 戻る</button>
+    <button id="bPlay" class="primary">▶ 再生</button>
+    <button id="bNext">次へ ▶</button>
+    <button id="bLast">⏭</button>
+    <input type="range" id="progress" min="0" max="1000" value="0">
+    <span class="step-label" id="stepLabel">0 / 0</span>
+  </div>
+  <p class="note"><kbd>←</kbd><kbd>→</kbd> 点を1個ずつ（<kbd>Shift</kbd>併用で10倍）／ <kbd>Space</kbd> 再生・停止 ／ <kbd>R</kbd> 乱数をふり直す。
+    シークバーは対数目盛（左端 N=0、右端 N=Nmax）。</p>
+
+  <div class="layout">
+    <div class="card">
+      <h3>① 正方形に点を打つ（赤＝円の内側 / 青＝外側）</h3>
+      <canvas id="sq" width="440" height="440"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--in)"></i>x²+y² ≤ 1（内側）</span>
+        <span><i style="background:var(--out)"></i>外側</span>
+      </div>
+      <p class="note" style="margin:10px 0 0">
+        一辺1の正方形（面積1）に四分円（面積 π/4）。<br>
+        点が内側に入る確率 ＝ π/4 なので、<b>π ≈ 4 × (内側の数) ÷ N</b>。
+      </p>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <div class="big">
+          <span class="pi" id="piVal">—</span>
+          <span class="st">N = <b id="nVal">0</b></span>
+          <span class="st">内側 = <b id="inVal">0</b></span>
+          <span class="st">誤差 = <b id="errVal">—</b></span>
+        </div>
+        <h3>② N を増やすと π̂ はどう変わる？（横軸は対数）</h3>
+        <canvas id="ch1" width="700" height="290"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>この試行の π̂</span>
+          <span><i style="background:#b8c2d6"></i>別の試行</span>
+          <span><i style="background:var(--best)"></i>真の π = 3.14159…</span>
+          <span><i style="background:rgba(255,210,74,.55)"></i>±2σ の目安（σ ≈ 1.64/√N）</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>③ 誤差 |π̂ − π| は N とどう減る？（両対数）</h3>
+        <canvas id="ch2" width="700" height="250"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--in)"></i>この試行の誤差</span>
+          <span><i style="background:var(--goal)"></i>1/√N の線（傾き −½）</span>
+        </div>
+        <p class="note" style="margin:10px 0 0">
+          誤差はおおよそ <b>1/√N</b> で減る。つまり<b>精度を10倍にするには点を100倍</b>打つ必要がある。
+          収束は遅いが、次元が増えても同じ速さで済むのがモンテカルロ法の強み。
+        </p>
+      </div>
+
+      <div class="card">
+        <h3>④ N ごとの推定値（この試行）</h3>
+        <table id="tbl"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const PI = Math.PI;
+
+// ---- 乱数（シード固定可能） ----
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+// ---- 状態（フレーム録画: 各 N の累積「内側の数」を全部記録） ----
+const RUNS = 10;
+let nmax = 1000, seedBase = 1;
+let xs, ys;               // 主試行の座標
+let cum = [];             // cum[r][n] = n 個目までの内側の数
+let cur = 0;              // 現在の N（= フレーム番号）
+let timer = null;
+
+function build(){
+  nmax = +$('nmax').value;
+  xs = new Float32Array(nmax); ys = new Float32Array(nmax);
+  cum = [];
+  for (let r = 0; r < RUNS; r++){
+    const rnd = mulberry32(seedBase * 1000 + r * 7919 + 13);
+    const c = new Int32Array(nmax + 1);
+    for (let i = 0; i < nmax; i++){
+      const x = rnd(), y = rnd();
+      if (r === 0){ xs[i] = x; ys[i] = y; }
+      c[i+1] = c[i] + (x*x + y*y <= 1 ? 1 : 0);
+    }
+    cum.push(c);
+  }
+  layerN = 0; lctx.clearRect(0,0,SZ,SZ);
+  buildTable();
+  goTo(0);
+}
+const est = (r, n) => 4 * cum[r][n] / n;
+
+// ---- ① 正方形 ----
+const SZ = 440, M = 14, S = SZ - 2*M;
+const sq = $('sq'), sctx = sq.getContext('2d');
+const layer = document.createElement('canvas'); layer.width = layer.height = SZ;
+const lctx = layer.getContext('2d');
+let layerN = 0;
+const DRAWMAX = 30000;    // 点の描画は多くてもこの数まで（以降は密度で十分）
+function drawPoints(n){
+  const m = Math.min(n, DRAWMAX);
+  if (m < layerN){ lctx.clearRect(0,0,SZ,SZ); layerN = 0; }
+  const sz = m > 5000 ? 1.5 : m > 800 ? 2.5 : 4;
+  for (let i = layerN; i < m; i++){
+    const x = xs[i], y = ys[i];
+    lctx.fillStyle = (x*x + y*y <= 1) ? '#ff6b6b' : '#2f5d8a';
+    lctx.fillRect(M + x*S - sz/2, M + (1-y)*S - sz/2, sz, sz);
+  }
+  layerN = m;
+}
+function drawSquare(n){
+  const c = sctx;
+  c.clearRect(0,0,SZ,SZ);
+  c.fillStyle = '#ffffff'; c.fillRect(M, M, S, S);
+  c.drawImage(layer, 0, 0);
+  c.strokeStyle = '#1a2030'; c.lineWidth = 1.5; c.strokeRect(M, M, S, S);
+  c.strokeStyle = '#4ade80'; c.lineWidth = 2.5;
+  c.beginPath(); c.arc(M, M + S, S, -Math.PI/2, 0); c.stroke();
+  if (n >= 1){      // 最新の点を強調
+    const x = xs[n-1], y = ys[n-1];
+    c.beginPath(); c.arc(M + x*S, M + (1-y)*S, 6, 0, 7);
+    c.strokeStyle = '#ffd24a'; c.lineWidth = 3; c.stroke();
+  }
+}
+
+// ---- 折れ線チャート共通 ----
+function logX(n, x0, w){ return x0 + w * Math.log10(Math.max(n,1)) / Math.log10(nmax); }
+function axes(c, W, H, L, R, T, B){
+  c.clearRect(0,0,W,H);
+  c.fillStyle = '#f7f9fc'; c.fillRect(0,0,W,H);
+  c.font = '11px Consolas, monospace'; c.fillStyle = '#5d6b82'; c.strokeStyle = '#e1e6f0'; c.lineWidth = 1;
+  const decs = Math.round(Math.log10(nmax));
+  for (let d = 0; d <= decs; d++){
+    const x = L + (W-L-R) * d / decs;
+    c.beginPath(); c.moveTo(x,T); c.lineTo(x,H-B); c.stroke();
+    c.textAlign = 'center'; c.fillText(d === 0 ? '1' : '10' + sup(d), x, H-B+14);
+  }
+  c.textAlign = 'center'; c.fillText('N（点の数）', L + (W-L-R)/2, H-3);
+}
+const sup = d => String(d).replace(/\d/g, k => '⁰¹²³⁴⁵⁶⁷⁸⁹'[k]);
+
+// ---- ② π̂ の推移 ----
+const ch1 = $('ch1'), c1 = ch1.getContext('2d');
+const YMIN = 2.4, YMAX = 4.0;
+function drawCh1(n){
+  const W = 700, H = 290, L = 46, R = 12, T = 12, B = 30, w = W-L-R, h = H-T-B;
+  axes(c1, W, H, L, R, T, B);
+  const Y = v => T + h * (1 - (Math.min(Math.max(v,YMIN),YMAX) - YMIN) / (YMAX - YMIN));
+  c1.textAlign = 'right'; c1.fillStyle = '#5d6b82'; c1.strokeStyle = '#e1e6f0';
+  for (let v = 2.5; v <= 4.0001; v += 0.5){
+    c1.beginPath(); c1.moveTo(L, Y(v)); c1.lineTo(W-R, Y(v)); c1.stroke();
+    c1.fillText(v.toFixed(1), L-6, Y(v)+4);
+  }
+  // ±2σ 帯
+  const sig = k => 4 * Math.sqrt((PI/4)*(1-PI/4)/k);
+  c1.fillStyle = 'rgba(255,210,74,.30)';
+  c1.beginPath();
+  const ks = []; for (let px = 0; px <= w; px += 2) ks.push(Math.max(1, Math.round(Math.pow(10, Math.log10(nmax) * px / w))));
+  ks.forEach((k,i) => { const x = L + i*2, y = Y(PI + 2*sig(k)); i ? c1.lineTo(x,y) : c1.moveTo(x,y); });
+  for (let i = ks.length-1; i >= 0; i--) c1.lineTo(L + i*2, Y(PI - 2*sig(ks[i])));
+  c1.closePath(); c1.fill();
+  // 真の π
+  c1.strokeStyle = '#4ade80'; c1.lineWidth = 2;
+  c1.beginPath(); c1.moveTo(L, Y(PI)); c1.lineTo(W-R, Y(PI)); c1.stroke();
+  c1.fillStyle = '#16a34a'; c1.textAlign = 'left'; c1.fillText('π', W-R-10, Y(PI)-5);
+  // 軌跡
+  const trace = (r, color, lw) => {
+    c1.strokeStyle = color; c1.lineWidth = lw; c1.beginPath();
+    let first = true, last = 0;
+    for (let px = 0; px <= w; px++){
+      const k = Math.max(1, Math.round(Math.pow(10, Math.log10(nmax) * px / w)));
+      if (k > n) break;
+      if (k === last) continue; last = k;
+      const x = L + px, y = Y(est(r, k));
+      first ? (c1.moveTo(x,y), first = false) : c1.lineTo(x,y);
+    }
+    if (n >= 1) c1.lineTo(logX(n, L, w), Y(est(r, n)));
+    c1.stroke();
+  };
+  if (n >= 1){
+    if ($('multi').checked) for (let r = 1; r < RUNS; r++) trace(r, 'rgba(120,135,165,.45)', 1);
+    trace(0, '#2f7fd9', 2.2);
+    const x = logX(n, L, w), y = Y(est(0, n));
+    c1.fillStyle = '#ff6b6b'; c1.beginPath(); c1.arc(x, y, 5, 0, 7); c1.fill();
+    c1.strokeStyle = '#fff'; c1.lineWidth = 1.5; c1.stroke();
+  }
+}
+
+// ---- ③ 誤差（両対数） ----
+const ch2 = $('ch2'), c2 = ch2.getContext('2d');
+function drawCh2(n){
+  const W = 700, H = 250, L = 46, R = 12, T = 12, B = 30, w = W-L-R, h = H-T-B;
+  axes(c2, W, H, L, R, T, B);
+  const EMIN = -5, EMAX = 0.7;
+  const Y = e => T + h * (1 - (Math.min(Math.max(Math.log10(Math.max(e,1e-12)),EMIN),EMAX) - EMIN) / (EMAX - EMIN));
+  c2.textAlign = 'right'; c2.fillStyle = '#5d6b82'; c2.strokeStyle = '#e1e6f0'; c2.lineWidth = 1;
+  for (let d = -4; d <= 0; d++){
+    const y = Y(Math.pow(10, d));
+    c2.beginPath(); c2.moveTo(L, y); c2.lineTo(W-R, y); c2.stroke();
+    c2.fillText('10' + (d<0?'⁻':'') + sup(Math.abs(d)), L-6, y+4);
+  }
+  // 1/√N 参照線（係数は σ≈1.64 を使用）
+  c2.strokeStyle = '#c084fc'; c2.lineWidth = 2; c2.setLineDash([6,4]); c2.beginPath();
+  for (let px = 0; px <= w; px += 3){
+    const k = Math.pow(10, Math.log10(nmax) * px / w);
+    const x = L + px, y = Y(1.64 / Math.sqrt(k));
+    px ? c2.lineTo(x,y) : c2.moveTo(x,y);
+  }
+  c2.stroke(); c2.setLineDash([]);
+  if (n >= 1){
+    c2.strokeStyle = '#ff6b6b'; c2.lineWidth = 1.4; c2.beginPath();
+    let first = true, last = 0;
+    for (let px = 0; px <= w; px++){
+      const k = Math.max(1, Math.round(Math.pow(10, Math.log10(nmax) * px / w)));
+      if (k > n) break; if (k === last) continue; last = k;
+      const x = L + px, y = Y(Math.abs(est(0,k) - PI));
+      first ? (c2.moveTo(x,y), first = false) : c2.lineTo(x,y);
+    }
+    c2.lineTo(logX(n, L, w), Y(Math.abs(est(0,n) - PI)));
+    c2.stroke();
+  }
+}
+
+// ---- ④ 表 ----
+let marks = [];
+function buildTable(){
+  marks = []; for (let k = 1; Math.pow(10,k) <= nmax; k++) marks.push(Math.pow(10,k));
+  $('tbl').innerHTML = '<tr><th>N</th><th>内側の数</th><th>π̂ = 4×内側/N</th><th>誤差</th><th>1.64/√N</th></tr>' +
+    marks.map(m => `<tr id="r${m}"><td>${m.toLocaleString()}</td><td id="i${m}">—</td><td id="p${m}">—</td><td id="e${m}">—</td><td>${(1.64/Math.sqrt(m)).toFixed(4)}</td></tr>`).join('');
+}
+function updateTable(n){
+  let curRow = null;
+  for (const m of marks){
+    const done = n >= m;
+    $('i'+m).textContent = done ? cum[0][m].toLocaleString() : '—';
+    $('p'+m).textContent = done ? est(0,m).toFixed(5) : '—';
+    $('e'+m).textContent = done ? (est(0,m)-PI >= 0 ? '+' : '−') + Math.abs(est(0,m)-PI).toFixed(5) : '—';
+    $('r'+m).className = '';
+    if (done) curRow = m;
+  }
+  if (curRow && n < curRow * 10) $('r'+curRow).className = 'cur';
+}
+
+// ---- 制御 ----
+function renderFrame(n){
+  drawPoints(n); drawSquare(n); drawCh1(n); drawCh2(n); updateTable(n);
+  $('nVal').textContent = n.toLocaleString();
+  $('inVal').textContent = n ? cum[0][n].toLocaleString() : '0';
+  if (n){ const e = est(0,n) - PI;
+    $('piVal').textContent = est(0,n).toFixed(5);
+    $('errVal').textContent = (e >= 0 ? '+' : '−') + Math.abs(e).toFixed(5);
+  } else { $('piVal').textContent = '—'; $('errVal').textContent = '—'; }
+  $('stepLabel').textContent = n.toLocaleString() + ' / ' + nmax.toLocaleString();
+  $('progress').value = n ? Math.round(1000 * Math.log10(n) / Math.log10(nmax)) : 0;
+}
+function goTo(n){ cur = Math.max(0, Math.min(nmax, Math.round(n))); renderFrame(cur); }
+function stepSize(){ // 再生1tickで進む点の数（N に比例して増やす → 対数軸で等速に見える）
+  const sp = +$('speed').value;
+  return Math.max(1, Math.round(cur * (0.004 + sp * 0.006)));
+}
+function tick(){
+  if (cur >= nmax){ stop(); return; }
+  goTo(cur + stepSize());
+  timer = setTimeout(tick, 40);
+}
+function play(){ if (cur >= nmax) goTo(0); $('bPlay').textContent = '⏸ 停止'; timer = setTimeout(tick, 40); }
+function stop(){ clearTimeout(timer); timer = null; $('bPlay').textContent = '▶ 再生'; }
+const toggle = () => timer ? stop() : play();
+
+$('bPlay').onclick = toggle;
+$('bFirst').onclick = () => { stop(); goTo(0); };
+$('bLast').onclick = () => { stop(); goTo(nmax); };
+$('bPrev').onclick = () => { stop(); goTo(cur - 1); };
+$('bNext').onclick = () => { stop(); goTo(cur + 1); };
+$('progress').oninput = e => { stop(); const v = +e.target.value;
+  goTo(v === 0 ? 0 : Math.pow(10, Math.log10(nmax) * v / 1000)); };
+$('nmax').onchange = () => { stop(); build(); };
+$('speed').oninput = e => { $('spdVal').textContent = e.target.value; };
+$('multi').onchange = () => renderFrame(cur);
+$('reseed').onclick = () => { stop(); seedBase++; build(); };
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowRight'){ stop(); goTo(cur + (e.shiftKey ? 10 : 1)); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft'){ stop(); goTo(cur - (e.shiftKey ? 10 : 1)); e.preventDefault(); }
+  else if (e.key === ' '){ toggle(); e.preventDefault(); }
+  else if (e.key === 'r' || e.key === 'R'){ stop(); seedBase++; build(); }
+});
+
+build();
+</script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スイッチと豆電球の1ビット加算器</title>
+<style>
+:root{
+  --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#d6dce8;
+  --text:#1a2030; --muted:#5d6b82; --accent:#2f7fd9;
+  --yellow:#ffd24a; --red:#ff6b6b; --blue:#2f5d8a; --green:#4ade80; --purple:#c084fc;
+  --ink:#06122a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Meiryo,"Hiragino Sans","Yu Gothic",sans-serif;line-height:1.6}
+header{padding:16px 24px 8px}
+header h1{margin:0;font-size:22px;color:var(--accent)}
+header p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;padding:8px 24px 12px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:6px 14px;border-radius:8px;cursor:pointer;font:inherit;font-size:14px}
+.tab:hover{border-color:var(--accent)}
+.tab.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:bold}
+.ctl{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+button.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:6px 14px;border-radius:8px;cursor:pointer;font:inherit;font-size:14px}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;padding:0 24px 24px}
+@media(max-width:980px){.layout{grid-template-columns:1fr}}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.stage svg{width:100%;height:auto;display:block;background:#f7f9fc;border-radius:8px}
+.switches{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.swbtn{min-width:130px;border:2px solid var(--line);background:var(--panel2);color:var(--text);border-radius:10px;padding:8px 14px;cursor:pointer;font:inherit;font-size:15px}
+.swbtn.on{background:var(--green);border-color:var(--green);color:var(--ink);font-weight:bold}
+.swbtn small{opacity:.7;margin-left:6px}
+.status{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.chip{font-size:15px;font-weight:bold;padding:6px 12px;border-radius:10px;background:var(--panel2)}
+.chip.lit{background:var(--yellow);color:var(--ink)}
+.side{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card h3{margin:0 0 8px;font-size:15px;color:var(--accent)}
+.card p{margin:4px 0;font-size:13px}
+table.tt{border-collapse:collapse;width:100%;font-size:14px;text-align:center}
+table.tt th{background:var(--accent);color:var(--ink);padding:4px 6px;border:1px solid var(--line);font-size:12px}
+table.tt td{padding:4px 6px;border:1px solid var(--line)}
+table.tt tr.cur td{background:#fff3c4;font-weight:bold}
+.calc{font-size:22px;font-weight:bold;text-align:center;font-family:Consolas,Meiryo,monospace}
+.bin{display:flex;justify-content:center;gap:10px;margin-top:8px}
+.bit{width:62px;text-align:center;border-radius:10px;background:var(--panel2);padding:4px 0;font-family:Consolas,monospace}
+.bit b{display:block;font-size:26px}
+.bit small{font-size:11px;color:var(--muted);font-family:Meiryo,sans-serif}
+.bit.lit{background:var(--yellow)}
+.expr{font-size:16px;font-weight:bold;padding:6px 8px;background:var(--panel2);border-radius:8px;font-family:Consolas,Meiryo,monospace;line-height:1.8}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:22px;height:5px;border-radius:3px;vertical-align:middle;margin-right:4px}
+.muted{color:var(--muted)}
+kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>スイッチと豆電球の1ビット加算器</h1>
+  <p>スイッチは 0/1 の入力、豆電球は答えの桁。「1＋1＝10（2進数）」を、繰り上がりの電球と和の電球で表す。</p>
+</header>
+
+<div class="controls">
+  <div class="tabs" id="tabs"></div>
+  <button class="btn primary" id="autoBtn">▶ 全パターン自動</button>
+  <label class="ctl">速さ <input type="range" id="speed" min="1" max="10" value="5"></label>
+</div>
+
+<div class="layout">
+  <div class="stage">
+    <svg id="svg" viewBox="0 0 820 440" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="switches" id="switches"></div>
+  </div>
+  <div class="side">
+    <div class="card"><h3>いまの計算</h3><div class="calc" id="calc"></div><div class="bin" id="bin"></div></div>
+    <div class="card"><h3>真理値表（回路を実際に動かして作成）</h3><div id="tt"></div></div>
+    <div class="card"><h3>論理式</h3><div class="expr" id="expr"></div></div>
+    <div class="card"><h3>しくみ</h3><div id="desc"></div></div>
+    <div class="card"><h3>凡例・操作</h3>
+      <div class="legend">
+        <span><i style="background:#ff6b6b"></i>電流が流れている</span>
+        <span><i style="background:#9aa7bd"></i>流れていない</span>
+      </div>
+      <p class="muted">同じ名前のスイッチ（A, B, Cin）は<b>連動</b>する（1つのスイッチに複数の接点がある）。どれをクリックしても同じように切り替わる。<br>キー: <kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd>（Cin）／<kbd>Space</kbd> 自動再生。<br>線が交差していても、黒い点がなければつながっていない。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ================= 回路モデル ================= */
+// w=導線, sw=スイッチ(ONで閉), sp=切替スイッチ(c→t0:OFF / t1:ON), x=交差スイッチ(OFFで平行 / ONで交差), bulb=電球
+const Wr=(a,b)=>({t:'w',a,b}), SW=(a,b,v)=>({t:'sw',a,b,v}), SP=(c,t0,t1,v)=>({t:'sp',c,t0,t1,v});
+const XS=(a1,a2,b1,b2,v)=>({t:'x',a1,a2,b1,b2,v}), BL=(a,b,id,lab)=>({t:'bulb',a,b,id,lab});
+
+// 直列のスイッチ列（AND）を start→end に y の高さで作る
+function chain(nodes,els,pre,start,end,y,x0,vars){
+  let prev=start;
+  vars.forEach((v,i)=>{
+    const a=pre+'a'+i, b=pre+'b'+i;
+    nodes[a]=[x0+i*150,y]; nodes[b]=[x0+i*150+110,y];
+    els.push(Wr(prev,a),SW(a,b,v)); prev=b;
+  });
+  els.push(Wr(prev,end));
+}
+
+function half(){
+  const nodes={P:[60,60],q:[130,60],q2:[130,120],ac:[180,120],a0:[290,80],a1:[290,160],b0:[450,80],b1:[450,160],bc:[560,120],
+    sl1:[610,120],sl2:[710,120],R1:[780,120],Rj:[780,280],R2:[780,410],N:[60,410],L1:[130,280],cl1:[610,280],cl2:[710,280]};
+  const els=[Wr('P','q'),Wr('q','q2'),Wr('q2','ac'),Wr('q2','L1'),
+    SP('ac','a0','a1','A'),Wr('a0','b1'),Wr('a1','b0'),SP('bc','b0','b1','B'),Wr('bc','sl1'),
+    BL('sl1','sl2','S','和 S'),Wr('sl2','R1'),Wr('R1','Rj'),Wr('cl2','Rj'),Wr('Rj','R2'),Wr('R2','N'),BL('cl1','cl2','C','繰り上がり C')];
+  chain(nodes,els,'c','L1','cl1',280,190,['A','B']);
+  return {name:'半加算器（A ＋ B）',vb:[820,440],inputs:['A','B'],nodes,els,
+    expr:'S = A ⊕ B<br>C = A ・ B',
+    desc:'<p>1ビット＋1ビットの足し算。</p><p>上の回路は<b>XOR</b>（階段スイッチのたすき掛け）で、<b>和 S</b>（その桁の答え）を作る。下の回路は<b>AND</b>（直列）で、<b>繰り上がり C</b> を作る。</p><p>1＋1 のときだけ S=0 で C=1、つまり <b>10₂（＝2）</b>になる。</p><p class="muted">ただし下の桁からの繰り上がりを受け取る入口がないので「半分」の加算器。</p>'};
+}
+
+function full(){
+  const nodes={P:[60,60],q:[130,60],q2:[130,100],ac:[180,100],a0:[290,70],a1:[290,130],xa1:[390,70],xa2:[390,130],xb1:[520,70],xb2:[520,130],
+    ct1:[600,70],ct0:[600,130],cc:[690,100],sl1:[780,100],sl2:[880,100],R1:[920,100],Rj:[920,266],R2:[920,510],N:[60,510],
+    L1:[130,266],L2:[130,350],L3:[130,434],J1:[500,266],J2:[500,350],J3:[500,434],cl1:[780,266],cl2:[880,266]};
+  const els=[Wr('P','q'),Wr('q','q2'),Wr('q2','ac'),Wr('q2','L1'),Wr('L1','L2'),Wr('L2','L3'),
+    SP('ac','a0','a1','A'),Wr('a0','xa1'),Wr('a1','xa2'),XS('xa1','xa2','xb1','xb2','B'),Wr('xb1','ct1'),Wr('xb2','ct0'),
+    SP('cc','ct0','ct1','Cin'),Wr('cc','sl1'),BL('sl1','sl2','S','和 S'),
+    Wr('J1','J2'),Wr('J2','J3'),Wr('J1','cl1'),BL('cl1','cl2','C','繰り上がり Cout'),
+    Wr('sl2','R1'),Wr('R1','Rj'),Wr('cl2','Rj'),Wr('Rj','R2'),Wr('R2','N')];
+  chain(nodes,els,'r1','L1','J1',266,190,['A','B']);
+  chain(nodes,els,'r2','L2','J2',350,190,['A','Cin']);
+  chain(nodes,els,'r3','L3','J3',434,190,['B','Cin']);
+  return {name:'全加算器（A ＋ B ＋ Cin）',vb:[960,540],inputs:['A','B','Cin'],nodes,els,
+    expr:'S = A ⊕ B ⊕ Cin<br>Cout = AB + ACin + BCin',
+    desc:'<p>下の桁からの繰り上がり <b>Cin</b> も足す、3入力の足し算。</p><p><b>和 S</b>：切替スイッチ A、<b>交差スイッチ B</b>、切替スイッチ Cin を3段に並べる。ONの数が<b>奇数</b>のときだけ電流が通る（XOR を3つ分）。</p><p><b>繰り上がり Cout</b>：「A・B」「A・Cin」「B・Cin」の3本の道を並列に。<b>2つ以上 ON</b>なら点灯（多数決）。</p><p class="muted">全加算器を n 個つなぎ、Cout を次の桁の Cin に渡せば n ビットの足し算になる。</p>'};
+}
+
+const CIRCUITS={half:half(),full:full()};
+
+/* ================= シミュレーション ================= */
+function sim(c, st){
+  const edges=[];
+  c.els.forEach((e,i)=>{
+    if(e.t==='w') edges.push({a:e.a,b:e.b,on:true,k:i+''});
+    else if(e.t==='sw') edges.push({a:e.a,b:e.b,on:!!st[e.v],k:i+''});
+    else if(e.t==='sp'){
+      edges.push({a:e.c,b:e.t0,on:!st[e.v],k:i+'a'});
+      edges.push({a:e.c,b:e.t1,on:!!st[e.v],k:i+'b'});
+    } else if(e.t==='x'){
+      edges.push({a:e.a1,b:e.b1,on:!st[e.v],k:i+'a'},{a:e.a2,b:e.b2,on:!st[e.v],k:i+'b'});
+      edges.push({a:e.a1,b:e.b2,on:!!st[e.v],k:i+'c'},{a:e.a2,b:e.b1,on:!!st[e.v],k:i+'d'});
+    }
+  });
+  const closed=edges.filter(e=>e.on), adj={};
+  closed.forEach(e=>{(adj[e.a]=adj[e.a]||[]).push(e.b);(adj[e.b]=adj[e.b]||[]).push(e.a);});
+  const reach=s=>{const seen=new Set(s),q=[...s];while(q.length){const x=q.pop();(adj[x]||[]).forEach(y=>{if(!seen.has(y)){seen.add(y);q.push(y);}});}return seen;};
+  const E=reach(['P']);
+  const bulbs=c.els.filter(e=>e.t==='bulb'), act={};
+  bulbs.forEach(e=>{act[e.id]=E.has(e.a);});
+  const on=bulbs.filter(e=>act[e.id]);
+  const R=reach(on.map(e=>e.b));
+  let cand=closed.filter(e=>(E.has(e.a)&&E.has(e.b))||(R.has(e.a)&&R.has(e.b)));
+  const term=new Set(['P','N']); on.forEach(e=>{term.add(e.a);term.add(e.b);});
+  for(;;){ // 行き止まりの枝には電流が流れない
+    const deg={}; cand.forEach(e=>{deg[e.a]=(deg[e.a]||0)+1;deg[e.b]=(deg[e.b]||0)+1;});
+    const nc=cand.filter(e=>(term.has(e.a)||deg[e.a]>1)&&(term.has(e.b)||deg[e.b]>1));
+    if(nc.length===cand.length)break; cand=nc;
+  }
+  return {act, live:new Set(cand.map(e=>e.k)), any:on.length>0};
+}
+function combos(n){ const r=[]; for(let i=0;i<(1<<n);i++){const a=[];for(let j=n-1;j>=0;j--)a.push((i>>j)&1);r.push(a);} return r; }
+function stOf(c,row){ const s={}; c.inputs.forEach((v,i)=>s[v]=row[i]); return s; }
+
+/* ================= 描画 ================= */
+const LIVE='#ff6b6b', OFFC='#9aa7bd', DARK='#5d6b82', ACC='#2f7fd9';
+let cur='half', state={}, auto=null, autoIdx=0;
+
+const pt=(c,n)=>c.nodes[n];
+const line=(p,q,col,w=5)=>`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>`;
+const dot=(p,col,r=6)=>`<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="${col}"/>`;
+const txt=(x,y,s,o={})=>`<text x="${x}" y="${y}" text-anchor="${o.a||'middle'}" font-size="${o.s||14}" fill="${o.c||'#1a2030'}" font-weight="${o.b?'bold':'normal'}" font-family="Meiryo,sans-serif">${s}</text>`;
+const onTxt=(v,y,x)=>txt(x,y,state[v]?'ON (1)':'OFF (0)',{s:12,c:state[v]?'#1a8a4a':DARK,b:1});
+
+function render(){
+  const c=CIRCUITS[cur], r=sim(c,state), seen=new Set();
+  $('svg').setAttribute('viewBox',`0 0 ${c.vb[0]} ${c.vb[1]}`);
+  let g='';
+  const deg={}, liveNode=new Set();
+  c.els.forEach((e,i)=>{
+    if(e.t==='w'||e.t==='sw'){
+      deg[e.a]=(deg[e.a]||0)+1; deg[e.b]=(deg[e.b]||0)+1;
+      if(r.live.has(i+'')){liveNode.add(e.a);liveNode.add(e.b);}
+    }
+  });
+  // 電池
+  const bp=pt(c,'P'), bn=pt(c,'N'), mid=(bp[1]+bn[1])/2, bl=r.any;
+  g+=line(bp,[60,mid-10],bl?LIVE:OFFC)+line([60,mid+10],bn,bl?LIVE:OFFC);
+  g+=`<line x1="36" y1="${mid-8}" x2="84" y2="${mid-8}" stroke="${DARK}" stroke-width="5"/><line x1="46" y1="${mid+8}" x2="74" y2="${mid+8}" stroke="${DARK}" stroke-width="5"/>`;
+  g+=txt(24,mid-4,'＋',{s:16,c:'#c0392b',b:1})+txt(24,mid+20,'－',{s:16,c:ACC,b:1})+txt(92,mid+4,'電池',{a:'start',s:13,c:DARK});
+
+  const tag=v=>{ const t=seen.has(v)?`スイッチ ${v}（連動）`:`スイッチ ${v}`; seen.add(v); return t; };
+  c.els.forEach((e,i)=>{
+    const k=i+'';
+    if(e.t==='w') g+=line(pt(c,e.a),pt(c,e.b),r.live.has(k)?LIVE:OFFC);
+    else if(e.t==='sw'){
+      const a=pt(c,e.a), b=pt(c,e.b), closed=!!state[e.v], lv=r.live.has(k), mx=(a[0]+b[0])/2;
+      const body=closed?line(a,b,lv?LIVE:OFFC):line(a,[b[0]-14,b[1]-30],DARK);
+      g+=`<g class="swg" data-v="${e.v}" style="cursor:pointer"><rect x="${a[0]-10}" y="${a[1]-56}" width="${b[0]-a[0]+20}" height="84" fill="transparent"/>${body}${dot(a,DARK)}${dot(b,DARK)}`
+        +txt(mx,a[1]-40,tag(e.v),{b:1,c:ACC,s:13})+onTxt(e.v,a[1]+24,mx)+`</g>`;
+    }
+    else if(e.t==='sp'){
+      const cc=pt(c,e.c), t0=pt(c,e.t0), t1=pt(c,e.t1), sel=state[e.v]?1:0, tt=sel?t1:t0;
+      const lv=r.live.has(k+(sel?'b':'a')), mx=(cc[0]+t0[0])/2;
+      const x0=Math.min(cc[0],t0[0]), x1=Math.max(cc[0],t0[0]), y0=Math.min(t0[1],t1[1]), y1=Math.max(t0[1],t1[1]);
+      g+=`<g class="swg" data-v="${e.v}" style="cursor:pointer"><rect x="${x0-14}" y="${y0-26}" width="${x1-x0+28}" height="${y1-y0+52}" fill="transparent"/>`
+        +line(cc,tt,lv?LIVE:DARK,6)+dot(cc,DARK,7)+dot(t0,DARK)+dot(t1,DARK)
+        +txt(mx,y0-32,'切替'+tag(e.v),{b:1,c:ACC,s:13})+onTxt(e.v,y1+34,mx)+`</g>`;
+    }
+    else if(e.t==='x'){
+      const a1=pt(c,e.a1),a2=pt(c,e.a2),b1=pt(c,e.b1),b2=pt(c,e.b2), sel=state[e.v]?1:0, mx=(a1[0]+b1[0])/2;
+      g+=`<g class="swg" data-v="${e.v}" style="cursor:pointer"><rect x="${a1[0]-14}" y="${a1[1]-26}" width="${b1[0]-a1[0]+28}" height="${a2[1]-a1[1]+52}" fill="transparent"/>`
+        +[[a1,b1],[a2,b2],[a1,b2],[a2,b1]].map(([p,q])=>line(p,q,'#d6dce8',2)).join('');
+      const pairs=sel?[[a1,b2,'c'],[a2,b1,'d']]:[[a1,b1,'a'],[a2,b2,'b']];
+      pairs.forEach(([p,q,s])=>{g+=line(p,q,r.live.has(k+s)?LIVE:DARK,6);});
+      g+=[a1,a2,b1,b2].map(p=>dot(p,DARK)).join('')
+        +txt(mx,a1[1]-32,'交差'+tag(e.v),{b:1,c:ACC,s:13})+onTxt(e.v,a2[1]+34,mx)+`</g>`;
+    }
+    else if(e.t==='bulb'){
+      const a=pt(c,e.a), b=pt(c,e.b), cx=(a[0]+b[0])/2, cy=a[1], rr=32, on=r.act[e.id], col=on?LIVE:OFFC;
+      g+=line(a,[cx-rr,cy],col)+line([cx+rr,cy],b,col);
+      if(on) g+=`<circle cx="${cx}" cy="${cy}" r="62" fill="rgba(255,210,74,.28)"/><circle cx="${cx}" cy="${cy}" r="46" fill="rgba(255,210,74,.45)"/>`;
+      g+=`<circle cx="${cx}" cy="${cy}" r="${rr}" fill="${on?'#ffd24a':'#f7f9fc'}" stroke="${DARK}" stroke-width="3"/>`
+        +`<path d="M${cx-14} ${cy+14} L${cx-8} ${cy-6} L${cx} ${cy+8} L${cx+8} ${cy-6} L${cx+14} ${cy+14}" fill="none" stroke="${on?'#b8860b':DARK}" stroke-width="2.5"/>`
+        +`<rect x="${cx-14}" y="${cy+30}" width="28" height="12" rx="2" fill="${DARK}"/>`+dot(a,DARK)+dot(b,DARK)
+        +txt(cx,cy-(on?72:44),`${e.lab} ＝ ${on?1:0}`,{b:1,s:15,c:on?'#b8860b':DARK});
+    }
+  });
+  Object.keys(deg).forEach(n=>{ if(deg[n]>=3) g+=dot(pt(c,n),liveNode.has(n)?LIVE:OFFC,7); });
+  $('svg').innerHTML=g;
+  $('svg').querySelectorAll('.swg').forEach(el=>el.addEventListener('click',()=>toggle(el.dataset.v)));
+
+  // スイッチボタンと状態
+  const keyOf=v=>v==='Cin'?'c':v.toLowerCase();
+  $('switches').innerHTML=c.inputs.map(v=>`<button class="swbtn ${state[v]?'on':''}" data-v="${v}">${v}：${state[v]?'ON (1)':'OFF (0)'}<small>[${keyOf(v)}]</small></button>`).join('')
+    +`<div class="status"><div class="chip ${r.act.C?'lit':''}">繰り上がり：${r.act.C?'💡1':'0'}</div><div class="chip ${r.act.S?'lit':''}">和：${r.act.S?'💡1':'0'}</div></div>`;
+  $('switches').querySelectorAll('.swbtn').forEach(b=>b.addEventListener('click',()=>toggle(b.dataset.v)));
+
+  // 計算表示
+  const ones=c.inputs.reduce((s,v)=>s+(state[v]?1:0),0);
+  $('calc').textContent=c.inputs.map(v=>state[v]?1:0).join(' ＋ ')+' ＝ '+ones;
+  $('bin').innerHTML=`<div class="bit ${r.act.C?'lit':''}"><small>繰り上がり C<br>（2の位）</small><b>${r.act.C?1:0}</b></div><div class="bit ${r.act.S?'lit':''}"><small>和 S<br>（1の位）</small><b>${r.act.S?1:0}</b></div>`
+    +`<div style="align-self:center;font-size:13px" class="muted">＝ ${(r.act.C?2:0)+(r.act.S?1:0)}</div>`;
+
+  // 真理値表
+  $('tt').innerHTML=`<table class="tt"><tr>${c.inputs.map(v=>`<th>${v}</th>`).join('')}<th>C<br>繰上</th><th>S<br>和</th><th>十進</th></tr>`
+    +combos(c.inputs.length).map(row=>{
+      const a=sim(c,stOf(c,row)).act, isCur=c.inputs.every((v,i)=>!!state[v]===!!row[i]);
+      return `<tr class="${isCur?'cur':''}">${row.map(x=>`<td>${x}</td>`).join('')}<td>${a.C?'1 💡':'0'}</td><td>${a.S?'1 💡':'0'}</td><td>${row.reduce((s,x)=>s+x,0)}</td></tr>`;
+    }).join('')+`</table>`;
+  $('expr').innerHTML=c.expr;
+  $('desc').innerHTML=c.desc;
+}
+
+function toggle(v){ state[v]=state[v]?0:1; render(); }
+function select(k){
+  stopAuto(); cur=k; state={}; CIRCUITS[k].inputs.forEach(v=>state[v]=0);
+  $('tabs').querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
+  render();
+}
+function stopAuto(){ if(auto){clearTimeout(auto);auto=null;} $('autoBtn').textContent='▶ 全パターン自動'; }
+function autoTick(){
+  const c=CIRCUITS[cur], rows=combos(c.inputs.length);
+  state=stOf(c,rows[autoIdx%rows.length]); autoIdx++; render();
+  auto=setTimeout(autoTick,2100-(+$('speed').value)*180);
+}
+function toggleAuto(){ if(auto){stopAuto();return;} autoIdx=0; $('autoBtn').textContent='⏸ 停止'; autoTick(); }
+
+$('tabs').innerHTML=Object.keys(CIRCUITS).map(k=>`<button class="tab" data-k="${k}">${CIRCUITS[k].name}</button>`).join('');
+$('tabs').querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>select(b.dataset.k)));
+$('autoBtn').addEventListener('click',toggleAuto);
+document.addEventListener('keydown',e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.key===' '){e.preventDefault();toggleAuto();return;}
+  const v={a:'A',b:'B',c:'Cin'}[e.key.toLowerCase()];
+  if(v&&CIRCUITS[cur].inputs.includes(v)){stopAuto();toggle(v);}
+});
+select('half');
+</script>
+</body>
+</html>

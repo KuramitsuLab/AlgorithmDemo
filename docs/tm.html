@@ -13,7 +13,7 @@
     --best:#4ade80;
     --stage:#f7f9fc;    /* 機械を載せる面（canvas 背景と同じ） */
     --tape:#ffffff;
-    --cell-w:60px; --vp-w:420px; --vp-h:80px; --reel-w:210px;
+    --cell-w:56px; --vp-w:280px; --vp-h:64px; --reel-w:120px;
     --mono:Consolas,Menlo,Monaco,monospace;
   }
   * { box-sizing:border-box; }
@@ -27,7 +27,7 @@
 
   .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
   .card h3 { margin:0 0 10px; font-size:14px; }
-  .layout { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start; margin-top:18px; }
+  .layout { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start; }
   @media (max-width:980px){ .layout { grid-template-columns:1fr; } }
   .note { font-size:12.5px; color:var(--muted); line-height:1.6; margin:10px 0 0; }
   .note b { color:var(--text); }
@@ -46,13 +46,13 @@
   button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
 
   /* ===== 機械（テープ・リール） ===== */
-  .stage-scroll { overflow-x:auto; background:var(--stage); border-radius:8px; padding:16px 0 8px; }
+  .stage-scroll { overflow-x:auto; background:var(--stage); border-radius:8px; padding:12px 0 6px; }
   .machine { display:flex; flex-direction:column; align-items:center; user-select:none;
              width:calc(var(--reel-w)*2 + var(--vp-w)); margin:0 auto; }
   .reels-row, .head-row { display:flex; width:100%; }
   .reel-col { width:var(--reel-w); flex-shrink:0; display:flex; flex-direction:column; align-items:center; }
   .reel-spacer { width:var(--vp-w); flex-shrink:0; }
-  .vtape { width:44px; height:24px; background:var(--tape);
+  .vtape { width:15px; height:14px; background:var(--tape);
            border-left:1px solid var(--line); border-right:1px solid var(--line); }
   .htape-row { width:100%; height:var(--vp-h); background:var(--tape); position:relative; flex-shrink:0;
                border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
@@ -65,8 +65,8 @@
 
   .cell { width:var(--cell-w); height:100%; display:flex; flex-direction:column; align-items:center;
           justify-content:center; border-right:1px solid var(--line); flex-shrink:0; cursor:text; }
-  .cell-val { font:700 1.4rem var(--mono); color:#b0b8cc; }
-  .cell-idx { font:.75rem var(--mono); color:#a3adc2; margin-top:4px; }
+  .cell-val { font:700 1.25rem var(--mono); color:#b0b8cc; }
+  .cell-idx { font:.72rem var(--mono); color:#a3adc2; margin-top:2px; }
   .cell:hover { background:rgba(47,127,217,.04); }
   .cell.is-head { background:rgba(47,127,217,.08); }
   .cell.is-head .cell-val { color:var(--accent); }
@@ -104,12 +104,12 @@
   .head-spacer { width:var(--reel-w); flex-shrink:0; }
   .head-center { width:var(--vp-w); display:flex; justify-content:center; }
   .head-pointer { display:flex; flex-direction:column; align-items:center; margin-top:4px; line-height:1; color:var(--cur); }
-  .head-pointer .arrow { font-size:1.6rem; }
-  .head-pointer .label { font:700 1.1rem var(--mono); }
+  .head-pointer .arrow { font-size:1.3rem; }
+  .head-pointer .label { font:700 1rem var(--mono); }
 
   /* ===== レジスタと命令 ===== */
   .reg-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; }
-  .reg-display { background:#1a2030; color:var(--best); font:700 3.4rem var(--mono);
+  .reg-display { background:#1a2030; color:var(--best); font:700 3rem var(--mono);
                  font-variant-numeric:tabular-nums; min-width:200px; text-align:center;
                  padding:14px 24px 12px; border-radius:10px; border:2px solid #2f3b57;
                  box-shadow:inset 0 2px 8px rgba(0,0,0,.5); text-shadow:0 0 12px rgba(74,222,128,.5); }
@@ -155,6 +155,7 @@
 
 <div class="wrap">
 
+  <div class="layout">
   <div class="card">
     <h3>① テープとヘッド（セルをダブルクリックで値を直接編集）</h3>
     <div class="stage-scroll">
@@ -176,10 +177,9 @@
         </div>
       </div>
     </div>
-    <p class="note">セルの下の数字は<b>ベースポインタ bp からの相対番号</b> M[n]。<code>CALL</code> するとヘッド位置が新しい M[0] になり、<code>RET</code> で元に戻る（関数ごとの作業領域）。値が書かれたセルは緑で表示。</p>
+    <p class="note" style="max-width:calc(var(--reel-w)*2 + var(--vp-w))">セルの下の数字は<b>ベースポインタ bp からの相対番号</b> M[n]。<code>CALL</code> するとヘッド位置が新しい M[0] になり、<code>RET</code> で元に戻る（関数ごとの作業領域）。値が書かれたセルは緑で表示。</p>
   </div>
 
-  <div class="layout">
     <div class="card">
       <h3>② レジスタと手動操作</h3>
       <div class="reg-title">Register</div>
@@ -202,8 +202,9 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <div class="card">
+  <div class="card" style="margin-top:18px">
       <h3>③ プログラム</h3>
       <div class="prog-bar">
         <button id="runBtn" class="primary">▶ 実行</button>
@@ -222,7 +223,6 @@
         <textarea class="prog-input" id="progInput" spellcheck="false"></textarea>
       </div>
       <div class="status" id="status">サンプル名（<code>add</code> <code>sub</code> <code>mul</code> <code>div</code> <code>mod</code> <code>gcd</code> <code>fact</code> <code>fib</code> <code>double</code>）を選んで挿入するか、自分で書いてみよう。</div>
-    </div>
   </div>
 
   <div class="card" style="margin-top:18px">
@@ -250,8 +250,8 @@ const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── 設定 ────────────────────────────────────────────────────────────────────
-const CELL_W   = 60;                          // 1セルの幅(px)
-const VISIBLE  = 7;                           // 窓に見えるセル数（奇数）
+const CELL_W   = 56;                          // 1セルの幅(px)
+const VISIBLE  = 5;                           // 窓に見えるセル数（奇数）
 const BUFFER   = 60;                          // 窓の外に描いておくセル数（片側）
 const VP_W     = CELL_W * VISIBLE;
 const HALF_VIS = Math.floor(VISIBLE / 2);
@@ -267,7 +267,7 @@ function reelSVG(side) {
     [199,146,244,101,4.5,'#b87038'],[199,194,244,239,4.5,'#b87038'],[151,146,106,101,4.5,'#b87038'],[151,194,106,239,4.5,'#b87038'],
   ].map(([a,b,c,d,w,col]) =>
     `<line x1="${a}" y1="${b}" x2="${c}" y2="${d}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>`).join('');
-  return `<svg width="210" height="204" viewBox="0 0 350 340">
+  return `<svg width="120" height="117" viewBox="0 0 350 340">
     <circle cx="178" cy="173" r="155" fill="#1a0800" opacity=".28"/>
     <circle cx="175" cy="170" r="155" fill="#4a2206" stroke="#2a1002" stroke-width="2.5"/>
     <circle cx="175" cy="170" r="148" fill="none" stroke="#6a3410" stroke-width="2" opacity=".55"/>

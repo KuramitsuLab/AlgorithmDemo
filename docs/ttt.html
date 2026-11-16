@@ -129,6 +129,16 @@
     </div>
   </div>
 
+  <div class="playbar">
+    <button id="toStart" title="最初へ">⏮</button>
+    <button id="prev" title="1手戻る">◀ 戻る</button>
+    <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
+    <button id="next" title="1手進む">次へ ▶</button>
+    <button id="toEnd" title="最後へ">⏭</button>
+    <input type="range" id="progress" min="0" max="0" value="0">
+    <span class="step-label" id="stepLabel">0 / 0</span>
+  </div>
+
   <div class="layout">
     <div>
       <div class="stage">
@@ -138,15 +148,6 @@
           <span id="descText">盤の升目をクリックして指してください。</span>
         </div>
         <div class="note" id="depthNote"></div>
-      </div>
-      <div class="playbar">
-        <button id="toStart" title="最初へ">⏮</button>
-        <button id="prev" title="1手戻る">◀ 戻る</button>
-        <button id="play" class="primary" title="再生/一時停止">▶ 再生</button>
-        <button id="next" title="1手進む">次へ ▶</button>
-        <button id="toEnd" title="最後へ">⏭</button>
-        <input type="range" id="progress" min="0" max="0" value="0">
-        <span class="step-label" id="stepLabel">0 / 0</span>
       </div>
     </div>
 
