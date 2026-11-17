@@ -26,6 +26,10 @@
            display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
   header h1 { font-size:18px; margin:0; font-weight:600; }
   header .sub { color:var(--muted); font-size:13px; }
+  header .note-link { margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+    background:var(--panel2); color:var(--accent); border:1px solid var(--line);
+    border-radius:8px; padding:6px 12px; font-size:13px; font-weight:600; text-decoration:none; }
+  header .note-link:hover { border-color:var(--accent); background:var(--panel); }
   .wrap { max-width:1180px; margin:0 auto; padding:20px 24px 60px; }
 
   .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;
@@ -112,6 +116,7 @@
 <header>
   <h1>ユークリッドの互除法（引き算版）</h1>
   <span class="sub">A = B なら答え。A &gt; B なら A ← A − B、A &lt; B なら B ← B − A。引き続けると最大公約数が残る</span>
+  <a class="note-link" href="https://note.com/kkuramitsu/n/n82717ba7d885" target="_blank" rel="noopener">📖 講義ノート</a>
 </header>
 
 <div class="wrap">
