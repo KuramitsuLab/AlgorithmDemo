@@ -29,6 +29,7 @@ UI・解説はすべて日本語。テーマは「探索 → 状態空間 → �
 | エラトステネスのふるい | `docs/sieve.html` | （未作成） | 2〜N（30〜400）の格子で小さい素数の倍数を順に消し、残った数を素数とする。frames は「素数を選ぶ／倍数を1個消す／完了」の操作ごと。今消した数・二重に消した数・これから消す倍数の予告を色分け、素数一覧、素数ごとのログ（クリックでジャンプ）。「p×p から消す」最適化の ON/OFF と消した回数の比較表。再生操作パネルは設定バー内（その下の段）に配置（逸脱） |
 | 論理回路 | `docs/logic.html` | （未作成） | スイッチと豆電球で AND（直列）/ OR（並列）/ NOT（リレー）、および NAND / NOR / XOR（階段スイッチ）。スイッチをクリックして点灯を確認、電流の流れを赤線で表示、真理値表は回路を実際にシミュレートして生成。全パターン自動再生。録画方式ではなく対話型（逸脱：入力が1〜2個で状態が即時に決まるため frames 不要） |
 | 1ビット加算器 | `docs/adder.html` | （未作成） | `logic.html` の続き。半加算器（XOR＋AND）と全加算器（奇数判定の3段切替スイッチ＋多数決の並列回路）を、スイッチと2つの豆電球（和 S・繰り上がり C）で実現。同名のスイッチは連動（多接点）。2進の足し算表示・真理値表（回路から生成）・全パターン自動再生。対話型（逸脱：frames 不要） |
+| GCD 練習 | `docs/gcd.html` | （未作成） | 手計算で互除法の練習：3題（2桁/3桁/4桁）の gcd を紙で解き、答えを入力。3つ入力すると「答え合わせ」が有効になり○×と正答数を表示。再読込/ボタンで新問題。対話型（逸脱：frames 不要） |
 
 **命名規約**: 1テーマ = 短い名前 `X` で統一 → `docs/X.html` / `scripts/make_X_pptx.py` / `slides/X.pptx`。
 
@@ -103,6 +104,22 @@ Python 側は同じ値を `RGBColor(0x..,0x..,0x..)` で定義。フォントは
   比較表（実数値）→ まとめ & 演習（対応する `docs/X.html` を案内）。
 - **単位の注意**: 座標は EMU。`build_freeform` / connector の座標は **int(EMU)**。
   フォントサイズ `Pt(...)` は **100〜400000 の範囲**（EMU をそのまま渡さない。`rad/12700` で pt 換算）。
+
+## OGP とサムネイル画像（scripts/make_ogp.py）
+
+ブログ・SNS・note に URL を貼ったときのカード用に、各 `docs/X.html` の `<head>` に OGP タグを持たせ、サムネイル `docs/img/X.png`（**1200×630**）を置く。公開先は GitHub Pages（`main` の `/docs`）で、`og:image` は絶対 URL `https://kuramitsulab.github.io/AlgorithmDemo/img/X.png`。
+
+```bash
+python3 scripts/make_ogp.py              # og:image 未設定の教材にタグを入れて画像を撮る
+python3 scripts/make_ogp.py sort --force # 指定教材の画像だけ撮り直す（--force なしは設定済みを skip）
+python3 scripts/make_ogp.py --force      # 全教材を撮り直す
+```
+
+- **タグ**: `<title>` の「—」より前を `og:title`、後ろを `og:description` にする。`og:url` / `og:image`（+width/height）/ `twitter:card=summary_large_image` を `</title>` の直後に挿入。既に `og:image` があれば重複して入れない。
+- **撮影**: Chrome ヘッドレス（`--headless --window-size --screenshot --virtual-time-budget=3000`）。HTML 本体は変えず、**一時コピーの `</body>` 直前に教材ごとの JS（`ADVANCE`）を差し込んで「少し進めた状態」にする**。進め方の例: frames 型は `stop(); goTo(frames.length*0.45)`、`bucket` は `apply` を数手、`ttt`/`othello` は `onCell` で AI に読ませた途中、`hanoi` は `goTab('viz')`。
+- **構図**: ヘッダ・設定バー・**再生ボタンを写さない**。ページ全体を縦長ウィンドウ（高さ y+630）で撮り、`.layout`（なければ `.stage`）の上端 y から 1200×630 を **PIL で切り出す**。y は JS が `document.title` に書き出したものを `--dump-dom` で読む。`document.scrollTo()` はヘッドレス撮影で上半分が白く抜けるので使わない。
+- **例外**（スクリプト冒頭の定数で調整）: `ANCHOR_TOP`（`logic`/`adder`/`tm`＝再生ボタンのない対話型なので先頭から撮る）、`ANCHOR_SEL`（`hanoi`＝`#modeViz .layout`）、`MARGIN`（切り出し位置の余白、既定 12px）。`gcd` は作業中のため `SKIP`。
+- 新テーマを足したら `ADVANCE` に進め方を1行足し、`make_ogp.py X` で生成する。画像を差し替えても貼り付け先（note・Facebook 等）は古い画像をキャッシュするので、`?v=2` を付けるかデバッガで再取得させる。
 
 ## 編集の指針
 
